@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Image Catalog</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0f0f0f;
+      --surface:      #1a1a1a;
+      --surface2:     #141414;
+      --border:       #2e2e2e;
+      --accent:       #c8f55a;
+      --accent-dim:   #8aaa35;
+      --text:         #e8e4dc;
+      --muted:        #888;
+      --danger:       #ff4d4d;
+      --danger-bg:    #2a0a0a;
+      --popup-bg:     #111;
+      --radius:       4px;
+      --gap:          14px;
+      --header-h:     56px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      overflow: hidden;
+    }
+
+    /* ── Top Header ───────────────────────────────────── */
+    #topbar {
+      height: var(--header-h);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+      gap: 20px;
+      flex-shrink: 0;
+    }
+    #topbar h1 {
+      font-family: 'Fraunces', serif;
+      font-weight: 300;
+      font-size: 1.4rem;
+      letter-spacing: -0.02em;
+    }
+    #topbar h1 em { font-style: italic; color: var(--accent); }
+    #item-count { font-size: 0.68rem; color: var(--muted); letter-spacing: 0.08em; }
+
+    /* ── Body split ───────────────────────────────────── */
+    #app {
+      display: flex;
+      height: calc(100vh - var(--header-h));
+    }
+
+    /* ── LEFT: Catalog ────────────────────────────────── */
+    #catalog-panel {
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 3px solid var(--border);
+      overflow: hidden;
+    }
+    #catalog-header {
+      padding: 10px 16px;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: var(--gap);
+      padding: 16px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    /* ── Card ─────────────────────────────────────────── */
+    .card {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: grab;
+      transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+      user-select: none;
+    }
+    .card:hover  { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+    .card.pinned { border-color: var(--accent); }
+    .card.dragging { opacity: 0.4; transform: scale(0.97); }
+
+    .card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      object-fit: cover;
+      border-radius: var(--radius) var(--radius) 0 0;
+      background: #222;
+      pointer-events: none;
+    }
+    .card-label {
+      padding: 6px 8px;
+      font-size: 0.62rem;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border-top: 1px solid var(--border);
+    }
+
+    /* availability badge on card */
+    .avail-badge {
+      position: absolute;
+      top: 5px;
+      left: 5px;
+      font-size: 0.55rem;
+      padding: 2px 5px;
+      border-radius: 2px;
+      letter-spacing: 0.06em;
+      pointer-events: none;
+    }
+    .avail-badge.ok   { background: rgba(200,245,90,0.15); color: var(--accent);  border: 1px solid var(--accent-dim); }
+    .avail-badge.low  { background: rgba(255,180,0,0.12);  color: #ffb400;        border: 1px solid #7a5500; }
+    .avail-badge.none { background: var(--danger-bg);      color: var(--danger);  border: 1px solid #7a0000; }
+
+    /* ── Popup ────────────────────────────────────────── */
+    .popup {
+      display: none;
+      position: absolute;
+      z-index: 200;
+      bottom: calc(100% + 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      min-width: 200px;
+      max-width: 260px;
+      background: var(--popup-bg);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+      pointer-events: none;
+    }
+    .card:hover  .popup { display: block; }
+    .card.pinned .popup { display: block; pointer-events: auto; }
+    .popup::after {
+      content: '';
+      position: absolute;
+      top: 100%; left: 50%;
+      transform: translateX(-50%);
+      border: 6px solid transparent;
+      border-top-color: var(--accent);
+    }
+    .popup-name { font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.95rem; color: var(--accent); margin-bottom: 6px; }
+    .popup-row  { display: flex; gap: 8px; margin-bottom: 3px; font-size: 0.65rem; line-height: 1.4; }
+    .popup-row .lbl { color: var(--muted); flex-shrink: 0; width: 64px; letter-spacing: 0.05em; }
+    .popup-row .val { color: var(--text); word-break: break-word; user-select: text; }
+    .popup-row .val.depleted { color: var(--danger); font-weight: 500; }
+    .pin-badge {
+      display: none; position: absolute; top: 5px; right: 5px;
+      background: var(--accent); color: #000; font-size: 0.55rem;
+      padding: 2px 5px; border-radius: 2px; font-weight: 500;
+    }
+    .card.pinned .pin-badge { display: block; }
+
+    /* ── RIGHT: Booking panel ─────────────────────────── */
+    #booking-panel {
+      width: 380px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface2);
+      overflow: hidden;
+    }
+    #booking-header {
+      padding: 10px 16px;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    #booking-controls {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .ctrl-row label {
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      width: 52px;
+      flex-shrink: 0;
+    }
+    .ctrl-row select {
+      flex: 1;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 5px 8px;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      outline: none;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .ctrl-row select:focus { border-color: var(--accent); }
+    .ctrl-row select.flash { border-color: var(--danger) !important; }
+
+    /* drop zone */
+    #drop-zone {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 16px;
+      position: relative;
+    }
+    #drop-zone.drag-over {
+      background: rgba(200,245,90,0.04);
+      outline: 2px dashed var(--accent-dim);
+      outline-offset: -8px;
+    }
+
+    #drop-hint {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    #drop-hint.hidden { opacity: 0; }
+    #drop-hint svg { opacity: 0.2; }
+    #drop-hint p { font-size: 0.68rem; color: var(--muted); text-align: center; line-height: 1.6; }
+
+    #doc-meta {
+      display: none;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    #doc-meta.visible { display: block; }
+    #doc-meta h2 {
+      font-family: 'Fraunces', serif;
+      font-weight: 300;
+      font-size: 1rem;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+    #doc-meta h2 em { font-style: italic; color: var(--accent); }
+    #doc-meta p { font-size: 0.63rem; color: var(--muted); }
+
+    #booking-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .booking-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      animation: slideIn 0.18s ease;
+    }
+    @keyframes slideIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: none; } }
+
+    .entry-num {
+      font-family: 'Fraunces', serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--accent);
+      line-height: 1;
+      min-width: 28px;
+      text-align: right;
+    }
+    .entry-body { flex: 1; min-width: 0; }
+    .entry-qid   { font-size: 0.8rem; color: var(--text); font-weight: 500; }
+    .entry-model { font-size: 0.65rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .entry-warn  { font-size: 0.62rem; color: var(--danger); margin-top: 4px; display: none; }
+    .entry-warn.visible { display: block; }
+
+    .entry-remove {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 1rem; line-height: 1;
+      padding: 0 2px; transition: color 0.15s; flex-shrink: 0;
+    }
+    .entry-remove:hover { color: var(--danger); }
+
+    /* ── Bottom bar ───────────────────────────────────── */
+    #bottom-bar {
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .btn {
+      flex: 1; padding: 8px 12px; border-radius: var(--radius);
+      font-family: 'DM Mono', monospace; font-size: 0.68rem;
+      letter-spacing: 0.08em; cursor: pointer; border: 1px solid var(--border);
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); }
+    .btn-primary:hover { background: #d8ff6a; }
+    .btn-ghost { background: transparent; color: var(--muted); }
+    .btn-ghost:hover { border-color: var(--muted); color: var(--text); }
+
+    /* ── Unpin hint ───────────────────────────────────── */
+    #hint {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--muted); font-size: 0.62rem; letter-spacing: 0.08em;
+      padding: 6px 16px; border-radius: 100px;
+      opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    #hint.visible { opacity: 1; }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>Image <em>Catalog</em></h1>
+  <span id="item-count"></span>
+</div>
+
+<div id="app">
+
+  <!-- LEFT: image grid -->
+  <div id="catalog-panel">
+    <div id="catalog-header">CATALOG — drag or double-click to book</div>
+    <div id="grid"></div>
+  </div>
+
+  <!-- RIGHT: booking panel -->
+  <div id="booking-panel">
+    <div id="booking-header">BOOKING SHEET</div>
+
+    <div id="booking-controls">
+      <div class="ctrl-row">
+        <label>WEEK</label>
+        <select id="sel-week">
+          <option value="">— select —</option>
+          <option value="1">Week 1</option>
+          <option value="2">Week 2</option>
+          <option value="3">Week 3</option>
+          <option value="4">Week 4</option>
+          <option value="5">Week 5</option>
+          <option value="6">Week 6</option>
+          <option value="7">Week 7</option>
+          <option value="8">Week 8</option>
+          <option value="9">Week 9</option>
+          <option value="10">Week 10</option>
+          <option value="11">Week 11</option>
+          <option value="12">Week 12</option>
+          <option value="13">Week 13</option>
+          <option value="exam">Exam</option>
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <label>ROOM</label>
+        <select id="sel-room">
+          <option value="">— select —</option>
+          <option value="W_101">W_101</option>
+          <option value="W_301">W_301</option>
+          <option value="Q_704">Q_704</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="drop-zone">
+      <div id="drop-hint">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#c8f55a" stroke-width="1.2">
+          <path d="M12 5v14M5 12l7 7 7-7"/>
+        </svg>
+        <p>Drag an image here<br>or double-click it<br><span style="color:#555">select Week + Room first</span></p>
+      </div>
+      <div id="doc-meta">
+        <h2 id="doc-title">—</h2>
+        <p id="doc-sub"></p>
+      </div>
+      <div id="booking-list"></div>
+    </div>
+
+    <div id="bottom-bar">
+      <button class="btn btn-ghost" id="btn-clear">CLEAR</button>
+      <button class="btn btn-primary" id="btn-export">EXPORT CSV</button>
+    </div>
+  </div>
+
+</div>
+
+<div id="hint">CLICK ANYWHERE TO UNPIN</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════════════════ */
+const CSV_PATH   = 'model_cat.csv';
+const IMAGES_DIR = 'images/';
+const IMG_EXTS   = ['jpg','jpeg','png','webp','gif','svg'];
+
+/* ═══════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════ */
+let catalog    = [];   // parsed CSV rows
+let baseCounts = {};   // { q_id: { w_count, q_count, total_count } } original values
+// weekCounts: deductions per week per item
+// { week: { q_id: { w_ded: n, q_ded: n } } }
+let weekCounts = {};
+// bookings: { week: { room: [ { q_id, model_name, qty } ] } }
+let bookings   = {};
+
+let pinnedCard = null;
+let dragQid    = null;
+
+const grid     = document.getElementById('grid');
+const countEl  = document.getElementById('item-count');
+const dropZone = document.getElementById('drop-zone');
+const dropHint = document.getElementById('drop-hint');
+const docMeta  = document.getElementById('doc-meta');
+const docTitle = document.getElementById('doc-title');
+const docSub   = document.getElementById('doc-sub');
+const bookList = document.getElementById('booking-list');
+const selWeek  = document.getElementById('sel-week');
+const selRoom  = document.getElementById('sel-room');
+const hint     = document.getElementById('hint');
+
+/* ═══════════════════════════════════════════════════════
+   CSV PARSER
+═══════════════════════════════════════════════════════ */
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = splitLine(lines[0]).map(h => h.trim().toLowerCase());
+  return lines.slice(1).map(line => {
+    const vals = splitLine(line);
+    const obj  = {};
+    headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
+    return obj;
+  });
+}
+function splitLine(line) {
+  const r = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (c === ',' && !inQ) { r.push(cur); cur = ''; }
+    else cur += c;
+  }
+  r.push(cur);
+  return r;
+}
+
+/* ═══════════════════════════════════════════════════════
+   IMAGE FINDER
+═══════════════════════════════════════════════════════ */
+function findImage(id) {
+  return new Promise(resolve => {
+    let idx = 0;
+    function tryNext() {
+      if (idx >= IMG_EXTS.length) { resolve(null); return; }
+      const src = `${IMAGES_DIR}${id}.${IMG_EXTS[idx++]}`;
+      const img = new Image();
+      img.onload  = () => resolve(src);
+      img.onerror = tryNext;
+      img.src = src;
+    }
+    tryNext();
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   COUNTS
+═══════════════════════════════════════════════════════ */
+function initCounts() {
+  baseCounts = {};
+  catalog.forEach(item => {
+    baseCounts[item.q_id] = {
+      w_count:     parseInt(item.w_count)     || 0,
+      q_count:     parseInt(item.q_count)     || 0,
+      total_count: parseInt(item.total_count) || 0,
+    };
+  });
+}
+
+// Effective remaining counts for a given week + room context
+function effectiveCounts(q_id, week, room) {
+  const base = baseCounts[q_id];
+  if (!base) return null;
+  const wd  = (weekCounts[week] && weekCounts[week][q_id]) || { w_ded: 0, q_ded: 0 };
+  const isW = room && room.startsWith('W');
+  return {
+    w_count:     base.w_count     - (isW ? wd.w_ded : 0),
+    q_count:     base.q_count     - (isW ? 0 : wd.q_ded),
+    total_count: base.total_count - wd.w_ded - wd.q_ded,
+  };
+}
+
+function deduct(q_id, week, room) {
+  if (!weekCounts[week])        weekCounts[week] = {};
+  if (!weekCounts[week][q_id])  weekCounts[week][q_id] = { w_ded: 0, q_ded: 0 };
+  const isW = room && room.startsWith('W');
+  if (isW) weekCounts[week][q_id].w_ded++;
+  else     weekCounts[week][q_id].q_ded++;
+}
+
+function revert(q_id, week, room, qty) {
+  if (!weekCounts[week] || !weekCounts[week][q_id]) return;
+  const isW = room && room.startsWith('W');
+  const n   = qty || 1;
+  if (isW) weekCounts[week][q_id].w_ded = Math.max(0, weekCounts[week][q_id].w_ded - n);
+  else     weekCounts[week][q_id].q_ded = Math.max(0, weekCounts[week][q_id].q_ded - n);
+}
+
+/* ═══════════════════════════════════════════════════════
+   CARD BUILDING
+═══════════════════════════════════════════════════════ */
+function buildCard(item, imgSrc) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.dataset.qid = item.q_id;
+
+  const img = document.createElement('img');
+  img.alt = item.model_name || item.q_id || '';
+  img.src = imgSrc || `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Crect fill='%23222' width='300' height='300'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23555' font-size='12' font-family='monospace'%3Eno image%3C/text%3E%3C/svg%3E`;
+
+  const availBadge = document.createElement('div');
+  availBadge.className = 'avail-badge';
+
+  const cardLabel = document.createElement('div');
+  cardLabel.className = 'card-label';
+  cardLabel.textContent = item.q_id || '—';
+
+  const pinBadge = document.createElement('div');
+  pinBadge.className = 'pin-badge';
+  pinBadge.textContent = 'PINNED';
+
+  // popup
+  const popup  = document.createElement('div');
+  popup.className = 'popup';
+
+  const nameEl = document.createElement('div');
+  nameEl.className = 'popup-name';
+  nameEl.textContent = item.model_name || item.q_id || '—';
+  popup.appendChild(nameEl);
+
+  const popupFields = [
+    { label: 'Q_ID',     key: 'q_id' },
+    { label: 'REF ID',   key: 'ref_id' },
+    { label: 'MFR',      key: 'manufacturer' },
+    { label: 'LOCATION', key: 'location' },
+    { label: 'W COUNT',  key: 'w_count',     isCount: true },
+    { label: 'Q COUNT',  key: 'q_count',     isCount: true },
+    { label: 'TOTAL',    key: 'total_count', isCount: true },
+  ];
+  popupFields.forEach(({ label, key, isCount }) => {
+    if (item[key] === undefined || item[key] === '') return;
+    const row = document.createElement('div');
+    row.className = 'popup-row';
+    const lb = document.createElement('span');
+    lb.className = 'lbl';
+    lb.textContent = label;
+    const vl = document.createElement('span');
+    vl.className = 'val';
+    if (isCount) vl.dataset.countKey = key;
+    vl.textContent = item[key];
+    row.appendChild(lb);
+    row.appendChild(vl);
+    popup.appendChild(row);
+  });
+
+  card.appendChild(img);
+  card.appendChild(availBadge);
+  card.appendChild(cardLabel);
+  card.appendChild(pinBadge);
+  card.appendChild(popup);
+
+  updateCardUI(card, item.q_id);
+
+  // drag
+  card.setAttribute('draggable', true);
+  card.addEventListener('dragstart', e => {
+    dragQid = item.q_id;
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'copy';
+  });
+  card.addEventListener('dragend', () => {
+    dragQid = null;
+    card.classList.remove('dragging');
+  });
+
+  // double-click to book
+  card.addEventListener('dblclick', e => {
+    e.stopPropagation();
+    addBooking(item.q_id);
+  });
+
+  // single click = pin
+  card.addEventListener('click', e => {
+    e.stopPropagation();
+    if (pinnedCard && pinnedCard !== card) pinnedCard.classList.remove('pinned');
+    card.classList.toggle('pinned');
+    pinnedCard = card.classList.contains('pinned') ? card : null;
+    hint.classList.toggle('visible', !!pinnedCard);
+  });
+
+  return card;
+}
+
+function updateCardUI(card, q_id) {
+  const week = selWeek.value;
+  const room = selRoom.value;
+  const ab   = card.querySelector('.avail-badge');
+
+  if (!week || !room) {
+    ab.className = 'avail-badge';
+    ab.textContent = '';
+    // restore original counts in popup
+    const item = catalog.find(r => r.q_id === q_id);
+    if (item) {
+      card.querySelectorAll('[data-count-key]').forEach(el => {
+        el.textContent = item[el.dataset.countKey] || '0';
+        el.classList.remove('depleted');
+      });
+    }
+    return;
+  }
+
+  const eff = effectiveCounts(q_id, week, room);
+  if (!eff) return;
+
+  // update popup counts
+  card.querySelectorAll('[data-count-key]').forEach(el => {
+    const val = eff[el.dataset.countKey];
+    el.textContent = val;
+    el.classList.toggle('depleted', val <= 0);
+  });
+
+  // availability badge
+  const relevant = room.startsWith('W') ? eff.w_count : eff.q_count;
+  if (relevant <= 0) {
+    ab.className = 'avail-badge none';
+    ab.textContent = 'NONE';
+  } else if (relevant <= 2) {
+    ab.className = 'avail-badge low';
+    ab.textContent = `x${relevant}`;
+  } else {
+    ab.className = 'avail-badge ok';
+    ab.textContent = `x${relevant}`;
+  }
+}
+
+function refreshAllCards() {
+  document.querySelectorAll('.card').forEach(card => updateCardUI(card, card.dataset.qid));
+}
+
+/* ═══════════════════════════════════════════════════════
+   BOOKING LOGIC
+═══════════════════════════════════════════════════════ */
+function addBooking(q_id) {
+  const week = selWeek.value;
+  const room = selRoom.value;
+  if (!week || !room) { flashControls(); return; }
+
+  const item = catalog.find(r => r.q_id === q_id);
+  if (!item) return;
+
+  if (!bookings[week])       bookings[week] = {};
+  if (!bookings[week][room]) bookings[week][room] = [];
+
+  const list     = bookings[week][room];
+  const existing = list.find(e => e.q_id === q_id);
+  if (existing) { existing.qty++; }
+  else          { list.push({ q_id, model_name: item.model_name || '', qty: 1 }); }
+
+  deduct(q_id, week, room);
+  renderBookingDoc();
+  refreshAllCards();
+}
+
+function removeEntry(q_id, week, room) {
+  if (!bookings[week] || !bookings[week][room]) return;
+  const list = bookings[week][room];
+  const idx  = list.findIndex(e => e.q_id === q_id);
+  if (idx === -1) return;
+  const qty = list[idx].qty;
+  revert(q_id, week, room, qty);
+  list.splice(idx, 1);
+  renderBookingDoc();
+  refreshAllCards();
+}
+
+function renderBookingDoc() {
+  const week = selWeek.value;
+  const room = selRoom.value;
+  bookList.innerHTML = '';
+
+  if (!week || !room) {
+    docMeta.classList.remove('visible');
+    dropHint.classList.remove('hidden');
+    return;
+  }
+
+  const list = (bookings[week] && bookings[week][room]) || [];
+
+  if (list.length === 0) {
+    docMeta.classList.remove('visible');
+    dropHint.classList.remove('hidden');
+  } else {
+    docMeta.classList.add('visible');
+    dropHint.classList.add('hidden');
+    const wLabel = week === 'exam' ? 'Exam' : `Week ${week}`;
+    docTitle.innerHTML = `<em>${wLabel}</em> — ${room}`;
+    docSub.textContent = `${list.length} item type${list.length !== 1 ? 's' : ''} booked`;
+  }
+
+  list.forEach(entry => {
+    const eff = effectiveCounts(entry.q_id, week, room);
+    const rel = eff ? (room.startsWith('W') ? eff.w_count : eff.q_count) : 0;
+
+    const div = document.createElement('div');
+    div.className = 'booking-entry';
+
+    const numEl = document.createElement('div');
+    numEl.className = 'entry-num';
+    numEl.textContent = entry.qty;
+
+    const body = document.createElement('div');
+    body.className = 'entry-body';
+
+    const qidEl = document.createElement('div');
+    qidEl.className = 'entry-qid';
+    qidEl.textContent = entry.q_id;
+
+    const modelEl = document.createElement('div');
+    modelEl.className = 'entry-model';
+    modelEl.textContent = entry.model_name;
+
+    const warnEl = document.createElement('div');
+    warnEl.className = 'entry-warn' + (rel < 0 ? ' visible' : '');
+    warnEl.textContent = 'no more available';
+
+    body.appendChild(qidEl);
+    body.appendChild(modelEl);
+    body.appendChild(warnEl);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'entry-remove';
+    removeBtn.title = 'Remove';
+    removeBtn.textContent = '✕';
+    removeBtn.addEventListener('click', () => removeEntry(entry.q_id, week, room));
+
+    div.appendChild(numEl);
+    div.appendChild(body);
+    div.appendChild(removeBtn);
+    bookList.appendChild(div);
+  });
+}
+
+function flashControls() {
+  [selWeek, selRoom].forEach(el => {
+    el.classList.add('flash');
+    setTimeout(() => el.classList.remove('flash'), 700);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   DROP ZONE
+═══════════════════════════════════════════════════════ */
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (dragQid) addBooking(dragQid);
+});
+
+/* ═══════════════════════════════════════════════════════
+   SELECTORS
+═══════════════════════════════════════════════════════ */
+selWeek.addEventListener('change', () => { renderBookingDoc(); refreshAllCards(); });
+selRoom.addEventListener('change', () => { renderBookingDoc(); refreshAllCards(); });
+
+/* ═══════════════════════════════════════════════════════
+   EXPORT CSV
+═══════════════════════════════════════════════════════ */
+document.getElementById('btn-export').addEventListener('click', () => {
+  // Sum all deductions across all weeks
+  const totalDed = {};
+  Object.values(weekCounts).forEach(wk => {
+    Object.entries(wk).forEach(([q_id, ded]) => {
+      if (!totalDed[q_id]) totalDed[q_id] = { w: 0, q: 0 };
+      totalDed[q_id].w += ded.w_ded;
+      totalDed[q_id].q += ded.q_ded;
+    });
+  });
+
+  const headers = ['Q_id','ref_id','model_name','manufacturer','location','W_count','Q_count','Total_count'];
+  const rows = catalog.map(item => {
+    const base = baseCounts[item.q_id] || {};
+    const ded  = totalDed[item.q_id]   || { w: 0, q: 0 };
+    const newW = (base.w_count     || 0) - ded.w;
+    const newQ = (base.q_count     || 0) - ded.q;
+    const newT = (base.total_count || 0) - ded.w - ded.q;
+    return [
+      item.q_id, item.ref_id, item.model_name, item.manufacturer,
+      item.location, newW, newQ, newT
+    ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',');
+  });
+
+  const csv  = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'catalog_updated.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ═══════════════════════════════════════════════════════
+   CLEAR current week+room
+═══════════════════════════════════════════════════════ */
+document.getElementById('btn-clear').addEventListener('click', () => {
+  const week = selWeek.value;
+  const room = selRoom.value;
+  if (!week || !room) return;
+
+  // revert all deductions for this week's bookings in this room
+  const list = (bookings[week] && bookings[week][room]) || [];
+  list.forEach(entry => revert(entry.q_id, week, room, entry.qty));
+
+  if (bookings[week]) delete bookings[week][room];
+  renderBookingDoc();
+  refreshAllCards();
+});
+
+/* ═══════════════════════════════════════════════════════
+   CLICK OUTSIDE = UNPIN
+═══════════════════════════════════════════════════════ */
+document.addEventListener('click', () => {
+  if (pinnedCard) {
+    pinnedCard.classList.remove('pinned');
+    pinnedCard = null;
+    hint.classList.remove('visible');
+  }
+});
+
+/* ═══════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════ */
+async function init() {
+  let text;
+  try {
+    const resp = await fetch(CSV_PATH);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    text = await resp.text();
+  } catch (err) {
+    grid.innerHTML = `<p style="color:var(--muted);font-size:0.8rem;padding:20px">
+      Could not load ${CSV_PATH}: ${err.message}</p>`;
+    return;
+  }
+
+  catalog = parseCSV(text);
+  initCounts();
+  countEl.textContent = `${catalog.length} item${catalog.length !== 1 ? 's' : ''}`;
+
+  const resolved = await Promise.all(catalog.map(item => findImage(item.q_id)));
+  catalog.forEach((item, i) => grid.appendChild(buildCard(item, resolved[i])));
+}
+
+init();
+</script>
+</body>
+</html>
