@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Image Catalog</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap');
 
@@ -409,7 +410,8 @@
 
     <div id="bottom-bar">
       <button class="btn btn-ghost" id="btn-clear">CLEAR</button>
-      <button class="btn btn-primary" id="btn-export">EXPORT CSV</button>
+      <button class="btn btn-ghost" id="btn-export-csv">CSV</button>
+      <button class="btn btn-primary" id="btn-export-xls">EXPORT XLS</button>
     </div>
   </div>
 
@@ -814,10 +816,9 @@ selWeek.addEventListener('change', () => { renderBookingDoc(); refreshAllCards()
 selRoom.addEventListener('change', () => { renderBookingDoc(); refreshAllCards(); });
 
 /* ═══════════════════════════════════════════════════════
-   EXPORT CSV
+   EXPORT CSV — updated remaining counts
 ═══════════════════════════════════════════════════════ */
-document.getElementById('btn-export').addEventListener('click', () => {
-  // Sum all deductions across all weeks
+document.getElementById('btn-export-csv').addEventListener('click', () => {
   const totalDed = {};
   Object.values(weekCounts).forEach(wk => {
     Object.entries(wk).forEach(([q_id, ded]) => {
@@ -848,6 +849,111 @@ document.getElementById('btn-export').addEventListener('click', () => {
   a.download = 'catalog_updated.csv';
   a.click();
   URL.revokeObjectURL(url);
+});
+
+/* ═══════════════════════════════════════════════════════
+   EXPORT XLS — one tab per week, all rooms within it
+═══════════════════════════════════════════════════════ */
+document.getElementById('btn-export-xls').addEventListener('click', () => {
+  if (typeof XLSX === 'undefined') {
+    alert('SheetJS library not loaded yet — please try again in a moment.');
+    return;
+  }
+
+  const weekOrder = ['1','2','3','4','5','6','7','8','9','10','11','12','13','exam'];
+  const rooms     = ['W_101','W_301','Q_704'];
+  const wb        = XLSX.utils.book_new();
+
+  // ── Sheet 1: Bookings — one tab per week ──────────────
+  let anyBookings = false;
+
+  weekOrder.forEach(week => {
+    const weekData = bookings[week];
+    if (!weekData) return;
+
+    // collect all entries for this week across all rooms
+    const allRows = [];
+    rooms.forEach(room => {
+      const list = weekData[room] || [];
+      list.forEach(entry => {
+        const item = catalog.find(r => r.q_id === entry.q_id) || {};
+        allRows.push({
+          Room:         room,
+          Q_id:         entry.q_id,
+          Model_Name:   entry.model_name || '',
+          Ref_ID:       item.ref_id      || '',
+          Manufacturer: item.manufacturer|| '',
+          Location:     item.location    || '',
+          Qty:          entry.qty,
+        });
+      });
+    });
+
+    if (allRows.length === 0) return;
+    anyBookings = true;
+
+    const label = week === 'exam' ? 'Exam' : `Week ${week}`;
+
+    // header row styled
+    const ws = XLSX.utils.json_to_sheet(allRows, {
+      header: ['Room','Q_id','Model_Name','Ref_ID','Manufacturer','Location','Qty']
+    });
+
+    // column widths
+    ws['!cols'] = [
+      { wch: 10 }, // Room
+      { wch: 12 }, // Q_id
+      { wch: 28 }, // Model_Name
+      { wch: 12 }, // Ref_ID
+      { wch: 20 }, // Manufacturer
+      { wch: 16 }, // Location
+      { wch: 6  }, // Qty
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, label);
+  });
+
+  // ── Sheet 2: Updated Catalog counts ───────────────────
+  const totalDed = {};
+  Object.values(weekCounts).forEach(wk => {
+    Object.entries(wk).forEach(([q_id, ded]) => {
+      if (!totalDed[q_id]) totalDed[q_id] = { w: 0, q: 0 };
+      totalDed[q_id].w += ded.w_ded;
+      totalDed[q_id].q += ded.q_ded;
+    });
+  });
+
+  const catalogRows = catalog.map(item => {
+    const base = baseCounts[item.q_id] || {};
+    const ded  = totalDed[item.q_id]   || { w: 0, q: 0 };
+    return {
+      Q_id:         item.q_id,
+      Ref_ID:       item.ref_id,
+      Model_Name:   item.model_name,
+      Manufacturer: item.manufacturer,
+      Location:     item.location,
+      W_count_remaining: (base.w_count     || 0) - ded.w,
+      Q_count_remaining: (base.q_count     || 0) - ded.q,
+      Total_remaining:   (base.total_count || 0) - ded.w - ded.q,
+    };
+  });
+
+  const wsCat = XLSX.utils.json_to_sheet(catalogRows, {
+    header: ['Q_id','Ref_ID','Model_Name','Manufacturer','Location',
+             'W_count_remaining','Q_count_remaining','Total_remaining']
+  });
+  wsCat['!cols'] = [
+    { wch: 12 }, { wch: 12 }, { wch: 28 }, { wch: 20 },
+    { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 16 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsCat, 'Remaining Counts');
+
+  if (wb.SheetNames.length === 0) {
+    alert('No bookings to export yet.');
+    return;
+  }
+
+  XLSX.writeFile(wb, 'bookings_export.xlsx');
 });
 
 /* ═══════════════════════════════════════════════════════
