@@ -985,7 +985,7 @@ function exportXLS() {
     if (sessions.length === 0) return;
     const itemMap = {};
     sessions.forEach(s => s.items.forEach(e => {
-      if (!itemMap[e.q_id]) { const cat = catalog.find(r=>r.q_id===e.q_id)||{}; itemMap[e.q_id]={q_id:e.q_id,ref_id:cat.ref_id||'',model_name:e.model_name,manufacturer:cat.manufacturer||'',location:cat.location||}; }
+      if (!itemMap[e.q_id]) { const cat = catalog.find(r=>r.q_id===e.q_id)||{}; itemMap[e.q_id]={q_id:e.q_id,ref_id:cat.ref_id||'',model_name:e.model_name,manufacturer:cat.manufacturer||'',location:cat.location||''}; }
     }));
     const items = Object.values(itemMap);
     const fixedCols = ['Q_id / Ref_ID','Model_Name','Manufacturer','Location'];
