@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Image Catalog</title>
+  <script src="xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0f0f0f;
+      --surface:    #1a1a1a;
+      --surface2:   #141414;
+      --border:     #2e2e2e;
+      --accent:     #c8f55a;
+      --accent-dim: #8aaa35;
+      --text:       #e8e4dc;
+      --muted:      #666;
+      --danger:     #ff4d4d;
+      --danger-bg:  #2a0a0a;
+      --warn:       #ffb400;
+      --warn-bg:    #2a1f00;
+      --popup-bg:   #111;
+      --radius:     4px;
+      --gap:        14px;
+      --header-h:   56px;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; overflow: hidden; }
+
+    /* ═══════════════════════════════════
+       TOPBAR
+    ═══════════════════════════════════ */
+    #topbar {
+      height: var(--header-h);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 12px;
+      flex-shrink: 0;
+      position: relative;
+    }
+    #topbar h1 { font-family: 'Fraunces', serif; font-weight: 300; font-size: 1.3rem; letter-spacing: -0.02em; flex-shrink: 0; }
+    #topbar h1 em { font-style: italic; color: var(--accent); }
+    #item-count { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.08em; }
+
+    /* mobile booking button (hidden on desktop) */
+    #mobile-booking-btn {
+      display: none;
+      margin-left: auto;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      position: relative;
+      flex-shrink: 0;
+    }
+    #mobile-booking-btn .badge {
+      background: var(--accent);
+      color: #000;
+      font-size: 0.6rem;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 10px;
+      min-width: 18px;
+      text-align: center;
+    }
+
+    /* ═══════════════════════════════════
+       DESKTOP LAYOUT
+    ═══════════════════════════════════ */
+    #app {
+      display: flex;
+      height: calc(100vh - var(--header-h));
+      overflow: hidden;
+    }
+
+    /* ── LEFT: Catalog ── */
+    #catalog-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 200px;
+      /* width set by JS resizer */
+      flex: 1 1 0;
+    }
+    #catalog-header { padding: 10px 16px; font-size: 0.65rem; letter-spacing: 0.1em; color: var(--muted); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--gap); padding: 16px; overflow-y: auto; flex: 1; }
+
+    /* ── DIVIDER ── */
+    #divider {
+      width: 6px;
+      background: var(--border);
+      cursor: col-resize;
+      flex-shrink: 0;
+      transition: background 0.15s;
+      position: relative;
+      z-index: 10;
+    }
+    #divider:hover, #divider.dragging { background: var(--accent-dim); }
+    #divider::after {
+      content: '⋮';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--muted);
+      font-size: 1rem;
+      pointer-events: none;
+    }
+
+    /* ── RIGHT: Booking panel ── */
+    #booking-panel {
+      width: 420px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface2);
+      overflow: hidden;
+      min-width: 280px;
+    }
+    #booking-header { padding: 10px 16px; font-size: 0.65rem; letter-spacing: 0.1em; color: var(--muted); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+
+    /* ═══════════════════════════════════
+       CARD
+    ═══════════════════════════════════ */
+    .card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); cursor: grab; transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s; user-select: none; }
+    .card:hover  { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+    .card.pinned { border-color: var(--accent); }
+    .card.dragging { opacity: 0.4; transform: scale(0.97); }
+    .card.exhausted { cursor: not-allowed; opacity: 0.5; }
+    .card.exhausted:hover { transform: none; box-shadow: none; border-color: var(--border); }
+
+    .card img { display: block; width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: var(--radius) var(--radius) 0 0; background: #222; pointer-events: none; }
+    .card-label { padding: 6px 8px; font-size: 0.6rem; color: var(--muted); letter-spacing: 0.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-top: 1px solid var(--border); }
+
+    /* mobile qty overlay on card */
+    .card-qty-overlay {
+      display: none;
+      position: absolute;
+      bottom: 28px;
+      right: 5px;
+      background: rgba(200,245,90,0.85);
+      color: #000;
+      font-family: 'Fraunces', serif;
+      font-weight: 600;
+      font-size: 1.4rem;
+      line-height: 1;
+      padding: 3px 7px;
+      border-radius: 3px;
+      pointer-events: none;
+    }
+
+    .avail-badge { position: absolute; top: 5px; left: 5px; font-size: 0.55rem; padding: 2px 5px; border-radius: 2px; letter-spacing: 0.06em; pointer-events: none; }
+    .avail-badge.ok     { background: rgba(200,245,90,0.15); color: var(--accent); border: 1px solid var(--accent-dim); }
+    .avail-badge.low    { background: rgba(255,180,0,0.12);  color: var(--warn);   border: 1px solid #7a5500; }
+    .avail-badge.none   { background: var(--danger-bg);      color: var(--danger); border: 1px solid #7a0000; }
+    .avail-badge.qavail { background: rgba(255,180,0,0.15);  color: var(--warn);   border: 1px solid #7a5500; }
+
+    /* ── Popup ── */
+    .popup { display: none; position: absolute; z-index: 200; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); min-width: 200px; max-width: 260px; background: var(--popup-bg); border: 1px solid var(--accent); border-radius: var(--radius); padding: 12px 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.7); pointer-events: none; }
+    .card:hover .popup  { display: block; }
+    .card.pinned .popup { display: block; pointer-events: auto; }
+    .popup::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--accent); }
+    .popup-name { font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.95rem; color: var(--accent); margin-bottom: 6px; }
+    .popup-row  { display: flex; gap: 8px; margin-bottom: 3px; font-size: 0.65rem; line-height: 1.4; }
+    .popup-row .lbl { color: var(--muted); flex-shrink: 0; width: 64px; letter-spacing: 0.05em; }
+    .popup-row .val { color: var(--text); word-break: break-word; user-select: text; }
+    .popup-row .val.depleted { color: var(--danger); font-weight: 500; }
+    .pin-badge { display: none; position: absolute; top: 5px; right: 5px; background: var(--accent); color: #000; font-size: 0.55rem; padding: 2px 5px; border-radius: 2px; font-weight: 500; }
+    .card.pinned .pin-badge { display: block; }
+
+    /* ═══════════════════════════════════
+       BOOKING CONTROLS
+    ═══════════════════════════════════ */
+    #booking-controls { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+    .ctrl-row { display: flex; align-items: flex-start; gap: 10px; }
+    .ctrl-row label { font-size: 0.65rem; letter-spacing: 0.08em; color: var(--muted); width: 52px; flex-shrink: 0; padding-top: 6px; }
+    .ctrl-row select { flex: 1; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px; font-family: 'DM Mono', monospace; font-size: 0.72rem; outline: none; cursor: pointer; transition: border-color 0.15s; }
+    .ctrl-row select:focus { border-color: var(--accent); }
+    .ctrl-row select.flash { border-color: var(--danger) !important; }
+
+    .days-group { display: flex; gap: 5px; flex-wrap: wrap; flex: 1; }
+    .day-btn { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: var(--radius); padding: 4px 8px; font-family: 'DM Mono', monospace; font-size: 0.65rem; cursor: pointer; transition: all 0.12s; letter-spacing: 0.05em; }
+    .day-btn.active { background: rgba(200,245,90,0.12); border-color: var(--accent-dim); color: var(--accent); }
+
+    /* ═══════════════════════════════════
+       DROP ZONE / BOOKING LIST
+    ═══════════════════════════════════ */
+    #drop-zone { flex: 1; overflow-y: auto; padding: 14px 16px; position: relative; }
+    #drop-zone.drag-over { background: rgba(200,245,90,0.04); outline: 2px dashed var(--accent-dim); outline-offset: -8px; }
+
+    #drop-hint { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; pointer-events: none; transition: opacity 0.2s; }
+    #drop-hint.hidden { opacity: 0; }
+    #drop-hint svg { opacity: 0.2; }
+    #drop-hint p { font-size: 0.68rem; color: var(--muted); text-align: center; line-height: 1.6; }
+
+    #doc-meta { display: none; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+    #doc-meta.visible { display: block; }
+    #doc-meta h2 { font-family: 'Fraunces', serif; font-weight: 300; font-size: 1rem; color: var(--text); margin-bottom: 3px; }
+    #doc-meta h2 em { font-style: italic; color: var(--accent); }
+    #doc-meta p { font-size: 0.63rem; color: var(--muted); }
+
+    #booking-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .booking-entry { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); animation: slideIn 0.18s ease; }
+    @keyframes slideIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: none; } }
+    .entry-num { font-family: 'Fraunces', serif; font-size: 1.5rem; font-weight: 600; color: var(--accent); line-height: 1; min-width: 28px; text-align: right; flex-shrink: 0; }
+    .entry-body { flex: 1; min-width: 0; }
+    .entry-qid   { font-size: 0.78rem; color: var(--text); font-weight: 500; }
+    .entry-model { font-size: 0.63rem; color: var(--muted); margin-top: 2px; }
+    .entry-msg   { font-size: 0.62rem; margin-top: 4px; padding: 3px 6px; border-radius: 2px; display: none; }
+    .entry-msg.qblock   { display: block; background: var(--warn-bg);   color: var(--warn);   border: 1px solid #5a3d00; }
+    .entry-msg.conflict { display: block; background: var(--danger-bg); color: var(--danger); border: 1px solid #7a0000; }
+
+    .entry-comment { width: 100%; margin-top: 6px; background: #0f0f0f; border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.62rem; padding: 5px 7px; resize: vertical; min-height: 42px; outline: none; transition: border-color 0.15s; }
+    .entry-comment:focus { border-color: var(--accent-dim); }
+    .entry-comment::placeholder { color: #444; }
+
+    .entry-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 2px; transition: color 0.15s; flex-shrink: 0; }
+    .entry-remove:hover { color: var(--danger); }
+
+    /* ── Bottom bar ── */
+    #bottom-bar { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+    .btn { flex: 1; padding: 8px 10px; border-radius: var(--radius); font-family: 'DM Mono', monospace; font-size: 0.65rem; letter-spacing: 0.06em; cursor: pointer; border: 1px solid var(--border); transition: all 0.15s; }
+    .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); }
+    .btn-primary:hover { background: #d8ff6a; }
+    .btn-ghost { background: transparent; color: var(--muted); }
+    .btn-ghost:hover { border-color: var(--muted); color: var(--text); }
+
+    /* ── Unpin hint ── */
+    #hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-size: 0.62rem; letter-spacing: 0.08em; padding: 6px 16px; border-radius: 100px; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 500; }
+    #hint.visible { opacity: 1; }
+
+    /* ═══════════════════════════════════
+       MOBILE BOOKING SHEET OVERLAY
+    ═══════════════════════════════════ */
+    #mobile-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 400;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(3px);
+      align-items: flex-end;
+    }
+    #mobile-overlay.open { display: flex; }
+
+    #mobile-sheet {
+      width: 100%;
+      max-height: 88vh;
+      background: var(--surface2);
+      border-radius: 16px 16px 0 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: sheetUp 0.25s ease;
+    }
+    @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+    #mobile-sheet-handle {
+      width: 40px; height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin: 10px auto 6px;
+      flex-shrink: 0;
+    }
+    #mobile-sheet-header {
+      padding: 8px 16px 10px;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    #mobile-sheet-close {
+      background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.2rem; line-height: 1;
+    }
+    /* mobile sheet inner content shares booking-panel styles */
+    #mobile-sheet .booking-inner { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+    /* ═══════════════════════════════════
+       RESPONSIVE — TABLET
+    ═══════════════════════════════════ */
+    @media (max-width: 900px) {
+      #booking-panel { width: 340px; min-width: 240px; }
+      #grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+    }
+
+    /* ═══════════════════════════════════
+       RESPONSIVE — MOBILE (≤600px)
+    ═══════════════════════════════════ */
+    @media (max-width: 600px) {
+      html, body { overflow: hidden; }
+
+      #topbar { padding: 0 12px; }
+      #topbar h1 { font-size: 1.1rem; }
+
+      /* hide desktop booking panel and divider */
+      #booking-panel, #divider { display: none !important; }
+
+      /* show mobile button */
+      #mobile-booking-btn { display: flex; }
+
+      /* catalog fills full width */
+      #catalog-panel { flex: 1; border-right: none; }
+
+      #grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 10px;
+        padding: 10px;
+      }
+
+      /* show qty overlay on cards */
+      .card .card-qty-overlay { display: block; }
+
+      /* hide desktop popups on mobile (tap = add) */
+      .popup { display: none !important; }
+      .pin-badge { display: none !important; }
+
+      #mobile-overlay { display: none; }
+      #mobile-overlay.open { display: flex; }
+    }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ═══════════════════════════════════
+       IMPORT BUTTON (topbar)
+    ═══════════════════════════════════ */
+    #btn-import {
+      margin-left: auto;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+      padding: 5px 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.15s;
+      flex-shrink: 0;
+    }
+    #btn-import:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ═══════════════════════════════════
+       IMPORT MODAL
+    ═══════════════════════════════════ */
+    #import-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 600;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #import-modal.open { display: flex; }
+    #import-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 100%;
+      max-width: 640px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.8);
+    }
+    #import-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #import-header span { font-size: 0.68rem; letter-spacing: 0.1em; color: var(--muted); }
+    #import-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.2rem; line-height: 1; }
+    #import-body { padding: 20px 18px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+    #import-dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 6px;
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.15s;
+      position: relative;
+    }
+    #import-dropzone:hover, #import-dropzone.dragover { border-color: var(--accent-dim); background: rgba(200,245,90,0.03); }
+    #import-dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    #import-dropzone .dz-icon { font-size: 2rem; margin-bottom: 8px; opacity: 0.35; }
+    #import-dropzone p { font-size: 0.7rem; color: var(--muted); line-height: 1.7; }
+    #import-dropzone p strong { color: var(--text); }
+    #import-file-name { font-size: 0.68rem; color: var(--accent); text-align: center; min-height: 18px; }
+    #import-status { font-size: 0.68rem; color: var(--muted); text-align: center; min-height: 20px; }
+    #import-status.error { color: var(--danger); }
+    #import-status.ok    { color: var(--accent); }
+    #import-preview { display: none; flex-direction: column; gap: 10px; }
+    #import-preview.visible { display: flex; }
+    .preview-unit-block { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .preview-unit-header { padding: 8px 12px; background: #111; font-size: 0.65rem; letter-spacing: 0.08em; color: var(--accent); display: flex; gap: 10px; flex-wrap: wrap; }
+    .preview-unit-header span { color: var(--muted); }
+    .preview-unit-header span em { color: var(--text); font-style: normal; }
+    .preview-table { width: 100%; border-collapse: collapse; font-size: 0.65rem; }
+    .preview-table th { padding: 6px 10px; background: #0a0a0a; color: var(--muted); letter-spacing: 0.06em; text-align: left; border-bottom: 1px solid var(--border); }
+    .preview-table td { padding: 6px 10px; border-bottom: 1px solid #1a1a1a; color: var(--text); vertical-align: top; }
+    .preview-table tr:last-child td { border-bottom: none; }
+    .preview-table td.matched   { color: var(--accent); }
+    .preview-table td.unmatched { color: var(--danger); }
+    .preview-table td.warn      { color: var(--warn); }
+    .preview-summary { font-size: 0.65rem; padding: 4px 2px; }
+    .preview-summary .ok  { color: var(--accent); }
+    .preview-summary .bad { color: var(--danger); }
+    #import-footer { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    #import-mode-wrap { font-size: 0.62rem; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-right: auto; }
+    #import-mode-wrap select { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px 6px; font-family: 'DM Mono', monospace; font-size: 0.62rem; outline: none; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>Image <em>Catalog</em></h1>
+  <span id="item-count"></span>
+  <button id="btn-import" title="Import booking document">&#8679; IMPORT</button>
+  <button id="mobile-booking-btn">
+    BOOKING <span class="badge" id="mobile-badge">0</span>
+  </button>
+</div>
+
+<div id="app">
+
+  <!-- LEFT: image grid -->
+  <div id="catalog-panel">
+    <div id="catalog-header">CATALOG — drag or double-click to book</div>
+    <div id="grid"></div>
+  </div>
+
+  <!-- DIVIDER (resizable) -->
+  <div id="divider"></div>
+
+  <!-- RIGHT: booking panel (desktop) -->
+  <div id="booking-panel">
+    <div id="booking-header">BOOKING SHEET</div>
+    <div class="booking-inner" id="booking-inner-desktop">
+      <!-- controls injected by JS -->
+    </div>
+  </div>
+
+</div>
+
+<!-- MOBILE overlay sheet -->
+<div id="mobile-overlay">
+  <div id="mobile-sheet">
+    <div id="mobile-sheet-handle"></div>
+    <div id="mobile-sheet-header">
+      <span>BOOKING SHEET</span>
+      <button id="mobile-sheet-close">✕</button>
+    </div>
+    <div class="booking-inner" id="booking-inner-mobile">
+      <!-- controls injected by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT MODAL -->
+<div id="import-modal">
+  <div id="import-box">
+    <div id="import-header">
+      <span>IMPORT BOOKING DOCUMENT</span>
+      <button id="import-close">&#10005;</button>
+    </div>
+    <div id="import-body">
+      <div id="import-dropzone">
+        <input type="file" id="import-file-input" accept=".pdf,.docx,.doc" />
+        <div class="dz-icon">&#8679;</div>
+        <p><strong>Click to choose</strong> or drag &amp; drop a file here<br>.docx or .pdf &mdash; booking documents only</p>
+      </div>
+      <div id="import-file-name"></div>
+      <div id="import-status"></div>
+      <div id="import-preview"></div>
+    </div>
+    <div id="import-footer">
+      <div id="import-mode-wrap">
+        MODE:
+        <select id="import-mode">
+          <option value="merge">Merge with existing</option>
+          <option value="replace">Replace existing</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost" id="btn-import-cancel" style="flex:0 0 auto;padding:7px 16px;">CANCEL</button>
+      <button class="btn btn-primary" id="btn-import-submit" style="flex:0 0 auto;padding:7px 16px;" disabled>IMPORT</button>
+    </div>
+  </div>
+</div>
+
+<div id="hint">CLICK ANYWHERE TO UNPIN</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════════════════ */
+const CSV_PATH   = 'mode_cat.csv';
+const IMAGES_DIR = 'images/';
+const IMG_EXTS   = ['jpg','jpeg','png','webp','gif','svg'];
+const ALL_ROOMS  = ['W_101','W_301','Q_704'];
+const WEEK_ORDER = ['1','2','3','4','5','6','7','8','9','10','11','12','13','exam'];
+const ALL_UNITS  = ['LSB142','LSD142','LSN104','LQB187','LQB570','LQB571','LQB482'];
+const ALL_DAYS   = ['Mon','Tue','Wed','Thu','Fri'];
+
+/* ═══════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════ */
+let catalog    = [];
+let baseCounts = {};
+let weekCounts = {}; // [week][q_id] = {w_ded, q_ded}
+let bookings   = {}; // [week][sessionKey] = {room, unit, days[], items[]}
+
+// Per-unit memory: unitMeta[unit] = { room, days[] }
+let unitMeta   = {};
+
+let pinnedCard   = null;
+let dragQid      = null;
+let selectedDays = [];
+
+/* ── Active selectors (shared between desktop + mobile) ── */
+let activeWeek = '';
+let activeRoom = '';
+let activeUnit = '';
+
+/* ═══════════════════════════════════════════════════════
+   BUILD BOOKING UI (shared HTML, injected into both panels)
+═══════════════════════════════════════════════════════ */
+function buildBookingUI(container) {
+  container.innerHTML = `
+    <div id="booking-controls-${container.id}">
+      <div class="ctrl-row">
+        <label>WEEK</label>
+        <select class="sel-week">
+          <option value="">— select —</option>
+          ${WEEK_ORDER.map(w => `<option value="${w}">${w === 'exam' ? 'Exam' : 'Week ' + w}</option>`).join('')}
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <label>UNIT</label>
+        <select class="sel-unit">
+          <option value="">— select —</option>
+          ${ALL_UNITS.map(u => `<option value="${u}">${u}</option>`).join('')}
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <label>ROOM</label>
+        <select class="sel-room">
+          <option value="">— select —</option>
+          ${ALL_ROOMS.map(r => `<option value="${r}">${r}</option>`).join('')}
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <label>DAYS</label>
+        <div class="days-group">
+          ${ALL_DAYS.map(d => `<button class="day-btn" data-day="${d}">${d}</button>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="drop-zone-inner" style="flex:1;overflow-y:auto;padding:14px 16px;position:relative;">
+      <div class="drop-hint-inner" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;pointer-events:none;transition:opacity 0.2s;">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#c8f55a" stroke-width="1.2" style="opacity:0.2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        <p style="font-size:0.68rem;color:var(--muted);text-align:center;line-height:1.6;">Drag an image here<br>or double-click it<br><span style="color:#444">select Week + Unit + Room first</span></p>
+      </div>
+      <div class="doc-meta-inner" style="display:none;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border);">
+        <h2 class="doc-title-inner" style="font-family:'Fraunces',serif;font-weight:300;font-size:1rem;color:var(--text);margin-bottom:3px;">—</h2>
+        <p class="doc-sub-inner" style="font-size:0.63rem;color:var(--muted);"></p>
+      </div>
+      <div class="booking-list-inner" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;">
+      <button class="btn btn-ghost btn-clear">CLEAR</button>
+      <button class="btn btn-ghost btn-csv">CSV</button>
+      <button class="btn btn-primary btn-xls">EXPORT XLS</button>
+    </div>
+  `;
+
+  // Apply shared styles to controls wrapper
+  const ctrl = container.querySelector(`#booking-controls-${container.id}`);
+  ctrl.style.cssText = 'padding:12px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;flex-shrink:0;';
+
+  wireBookingUI(container);
+  syncUIState(container);
+}
+
+/* ── Wire events for a booking UI instance ── */
+function wireBookingUI(container) {
+  const selWeekEl = container.querySelector('.sel-week');
+  const selUnitEl = container.querySelector('.sel-unit');
+  const selRoomEl = container.querySelector('.sel-room');
+  const dayBtns   = container.querySelectorAll('.day-btn');
+
+  selWeekEl.addEventListener('change', () => {
+    activeWeek = selWeekEl.value;
+    syncAllInstances('week', activeWeek);
+    renderAllBookingDocs();
+    refreshAllCards();
+  });
+
+  selUnitEl.addEventListener('change', () => {
+    activeUnit = selUnitEl.value;
+    // Restore room + days that were last used with this unit
+    if (activeUnit && unitMeta[activeUnit]) {
+      activeRoom     = unitMeta[activeUnit].room  || '';
+      selectedDays   = [...(unitMeta[activeUnit].days || [])];
+    }
+    syncAllInstances('unit', activeUnit);
+    syncAllInstances('room', activeRoom);
+    syncAllInstances('days', selectedDays);
+    renderAllBookingDocs();
+    refreshAllCards();
+  });
+
+  selRoomEl.addEventListener('change', () => {
+    activeRoom = selRoomEl.value;
+    // Save room to this unit's meta
+    if (activeUnit) {
+      if (!unitMeta[activeUnit]) unitMeta[activeUnit] = { room: '', days: [] };
+      unitMeta[activeUnit].room = activeRoom;
+    }
+    syncAllInstances('room', activeRoom);
+    renderAllBookingDocs();
+    refreshAllCards();
+  });
+
+  dayBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const day = btn.dataset.day;
+      if (selectedDays.includes(day)) selectedDays = selectedDays.filter(d => d !== day);
+      else selectedDays.push(day);
+      // Save days to this unit's meta
+      if (activeUnit) {
+        if (!unitMeta[activeUnit]) unitMeta[activeUnit] = { room: '', days: [] };
+        unitMeta[activeUnit].days = [...selectedDays];
+      }
+      // Update session days live
+      if (activeWeek && activeRoom && activeUnit) {
+        const key = sessionKey(activeRoom, activeUnit);
+        if (bookings[activeWeek] && bookings[activeWeek][key]) {
+          bookings[activeWeek][key].days = [...selectedDays];
+        }
+      }
+      syncAllInstances('days', selectedDays);
+      renderAllBookingDocs();
+    });
+  });
+
+  // Drop zone
+  const dz = container.querySelector('.drop-zone-inner');
+  dz.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; dz.style.background = 'rgba(200,245,90,0.04)'; dz.style.outline = '2px dashed var(--accent-dim)'; dz.style.outlineOffset = '-8px'; });
+  dz.addEventListener('dragleave', () => { dz.style.background = ''; dz.style.outline = ''; });
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.style.background = ''; dz.style.outline = ''; if (dragQid) addBooking(dragQid); });
+
+  // Buttons
+  container.querySelector('.btn-clear').addEventListener('click', doClear);
+  container.querySelector('.btn-csv').addEventListener('click', exportCSV);
+  container.querySelector('.btn-xls').addEventListener('click', exportXLS);
+}
+
+/* ── Sync all UI instances to a shared value ── */
+function syncAllInstances(field, value) {
+  getAllContainers().forEach(c => {
+    if (field === 'week') {
+      const el = c.querySelector('.sel-week');
+      if (el && el.value !== value) el.value = value;
+    }
+    if (field === 'unit') {
+      const el = c.querySelector('.sel-unit');
+      if (el && el.value !== value) el.value = value;
+    }
+    if (field === 'room') {
+      const el = c.querySelector('.sel-room');
+      if (el && el.value !== value) el.value = value;
+    }
+    if (field === 'days') {
+      c.querySelectorAll('.day-btn').forEach(btn => {
+        btn.classList.toggle('active', value.includes(btn.dataset.day));
+      });
+    }
+  });
+}
+
+function syncUIState(container) {
+  const sw = container.querySelector('.sel-week'); if (sw) sw.value = activeWeek;
+  const su = container.querySelector('.sel-unit'); if (su) su.value = activeUnit;
+  const sr = container.querySelector('.sel-room'); if (sr) sr.value = activeRoom;
+  container.querySelectorAll('.day-btn').forEach(btn => btn.classList.toggle('active', selectedDays.includes(btn.dataset.day)));
+}
+
+function getAllContainers() {
+  return [
+    document.getElementById('booking-inner-desktop'),
+    document.getElementById('booking-inner-mobile'),
+  ].filter(Boolean);
+}
+
+/* ═══════════════════════════════════════════════════════
+   CSV PARSER
+═══════════════════════════════════════════════════════ */
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = splitLine(lines[0]).map(h => h.trim().toLowerCase());
+  return lines.slice(1).map(line => {
+    const vals = splitLine(line), obj = {};
+    headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
+    return obj;
+  });
+}
+function splitLine(line) {
+  const r = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { if (inQ && line[i+1]==='"') { cur+='"'; i++; } else inQ=!inQ; }
+    else if (c===',' && !inQ) { r.push(cur); cur=''; }
+    else cur += c;
+  }
+  r.push(cur); return r;
+}
+
+/* ═══════════════════════════════════════════════════════
+   IMAGE FINDER
+═══════════════════════════════════════════════════════ */
+function findImage(id) {
+  return new Promise(resolve => {
+    let idx = 0;
+    function tryNext() {
+      if (idx >= IMG_EXTS.length) { resolve(null); return; }
+      const src = `${IMAGES_DIR}${id}.${IMG_EXTS[idx++]}`;
+      const img = new Image();
+      img.onload = () => resolve(src); img.onerror = tryNext; img.src = src;
+    }
+    tryNext();
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   COUNTS
+═══════════════════════════════════════════════════════ */
+function initCounts() {
+  baseCounts = {};
+  catalog.forEach(item => {
+    baseCounts[item.q_id] = {
+      w_count:     parseInt(item.w_count)     || 0,
+      q_count:     parseInt(item.q_count)     || 0,
+      total_count: parseInt(item.total_count) || 0,
+    };
+  });
+}
+
+function effectiveCounts(q_id, week) {
+  const base = baseCounts[q_id]; if (!base) return null;
+  const wd = (weekCounts[week] && weekCounts[week][q_id]) || { w_ded: 0, q_ded: 0 };
+  return { w_count: base.w_count-wd.w_ded, q_count: base.q_count-wd.q_ded, total_count: base.total_count-wd.w_ded-wd.q_ded };
+}
+
+function deduct(q_id, week, isW) {
+  if (!weekCounts[week])       weekCounts[week] = {};
+  if (!weekCounts[week][q_id]) weekCounts[week][q_id] = { w_ded: 0, q_ded: 0 };
+  if (isW) weekCounts[week][q_id].w_ded++; else weekCounts[week][q_id].q_ded++;
+}
+
+function revertN(q_id, week, isW, n) {
+  if (!weekCounts[week] || !weekCounts[week][q_id]) return;
+  if (isW) weekCounts[week][q_id].w_ded = Math.max(0, weekCounts[week][q_id].w_ded - n);
+  else     weekCounts[week][q_id].q_ded = Math.max(0, weekCounts[week][q_id].q_ded - n);
+}
+
+function sessionKey(room, unit) { return `${room}||${unit}`; }
+function parseKey(key) { const [room, unit] = key.split('||'); return { room, unit }; }
+
+/* ═══════════════════════════════════════════════════════
+   CONFLICT DETECTION
+═══════════════════════════════════════════════════════ */
+function detectConflict(q_id, week) {
+  const eff = effectiveCounts(q_id, week);
+  if (!eff || eff.total_count > 0) return null;
+  const weekData = bookings[week] || {};
+  const involved = [];
+  Object.entries(weekData).forEach(([key, session]) => {
+    if (session.items.some(e => e.q_id === q_id)) {
+      const { room, unit } = parseKey(key);
+      involved.push({ room, unit, days: session.days || [] });
+    }
+  });
+  if (involved.length < 2) return null;
+  for (let i = 0; i < involved.length; i++) {
+    for (let j = i + 1; j < involved.length; j++) {
+      if (involved[i].days.filter(d => involved[j].days.includes(d)).length > 0) {
+        const a = `${involved[i].room}_${involved[i].unit}(${involved[i].days.join('-')})`;
+        const b = `${involved[j].room}_${involved[j].unit}(${involved[j].days.join('-')})`;
+        return `conflict between ${a} and ${b}`;
+      }
+    }
+  }
+  return null;
+}
+
+/* ═══════════════════════════════════════════════════════
+   CARD BUILDING
+═══════════════════════════════════════════════════════ */
+function buildCard(item, imgSrc) {
+  const card = document.createElement('div');
+  card.className = 'card'; card.dataset.qid = item.q_id;
+
+  const img = document.createElement('img');
+  img.alt = item.model_name || item.q_id || '';
+  img.src = imgSrc || `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Crect fill='%23222' width='300' height='300'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23555' font-size='12' font-family='monospace'%3Eno image%3C/text%3E%3C/svg%3E`;
+
+  const availBadge = document.createElement('div'); availBadge.className = 'avail-badge';
+
+  // mobile qty overlay
+  const qtyOverlay = document.createElement('div'); qtyOverlay.className = 'card-qty-overlay';
+
+  const cardLabel = document.createElement('div'); cardLabel.className = 'card-label'; cardLabel.textContent = item.q_id || '—';
+  const pinBadge  = document.createElement('div'); pinBadge.className = 'pin-badge'; pinBadge.textContent = 'PINNED';
+
+  const popup  = document.createElement('div'); popup.className = 'popup';
+  const nameEl = document.createElement('div'); nameEl.className = 'popup-name'; nameEl.textContent = item.model_name || item.q_id || '—';
+  popup.appendChild(nameEl);
+  [
+    { label:'Q_ID', key:'q_id' }, { label:'REF ID', key:'ref_id' },
+    { label:'MFR', key:'manufacturer' }, { label:'LOCATION', key:'location' },
+    { label:'W COUNT', key:'w_count', isCount:true }, { label:'Q COUNT', key:'q_count', isCount:true }, { label:'TOTAL', key:'total_count', isCount:true },
+  ].forEach(({ label, key, isCount }) => {
+    if (item[key] === undefined || item[key] === '') return;
+    const row = document.createElement('div'); row.className = 'popup-row';
+    const lb = document.createElement('span'); lb.className = 'lbl'; lb.textContent = label;
+    const vl = document.createElement('span'); vl.className = 'val'; if (isCount) vl.dataset.countKey = key; vl.textContent = item[key];
+    row.appendChild(lb); row.appendChild(vl); popup.appendChild(row);
+  });
+
+  card.appendChild(img); card.appendChild(availBadge); card.appendChild(qtyOverlay);
+  card.appendChild(cardLabel); card.appendChild(pinBadge); card.appendChild(popup);
+
+  updateCardUI(card, item.q_id);
+
+  // drag
+  card.setAttribute('draggable', true);
+  card.addEventListener('dragstart', e => { if (card.classList.contains('exhausted')) { e.preventDefault(); return; } dragQid = item.q_id; card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'copy'; });
+  card.addEventListener('dragend', () => { dragQid = null; card.classList.remove('dragging'); });
+
+  // double-click (desktop)
+  card.addEventListener('dblclick', e => { e.stopPropagation(); if (!card.classList.contains('exhausted')) addBooking(item.q_id); });
+
+  // tap/click — on mobile: add booking directly; on desktop: pin
+  card.addEventListener('click', e => {
+    e.stopPropagation();
+    if (card.classList.contains('exhausted')) return;
+    if (isMobile()) {
+      addBooking(item.q_id);
+    } else {
+      if (pinnedCard && pinnedCard !== card) pinnedCard.classList.remove('pinned');
+      card.classList.toggle('pinned');
+      pinnedCard = card.classList.contains('pinned') ? card : null;
+      document.getElementById('hint').classList.toggle('visible', !!pinnedCard);
+    }
+  });
+
+  return card;
+}
+
+function isMobile() { return window.innerWidth <= 600; }
+
+function updateCardUI(card, q_id) {
+  const ab  = card.querySelector('.avail-badge');
+  const qto = card.querySelector('.card-qty-overlay');
+
+  // mobile qty overlay: count how many of this item are booked in current week
+  if (activeWeek && activeRoom && activeUnit) {
+    const key  = sessionKey(activeRoom, activeUnit);
+    const sess = bookings[activeWeek] && bookings[activeWeek][key];
+    const entry = sess && sess.items.find(e => e.q_id === q_id);
+    qto.textContent = entry ? entry.qty : '';
+  } else {
+    qto.textContent = '';
+  }
+
+  if (!activeWeek || !activeRoom) {
+    ab.className = 'avail-badge'; ab.textContent = '';
+    card.classList.remove('exhausted');
+    const item = catalog.find(r => r.q_id === q_id);
+    if (item) card.querySelectorAll('[data-count-key]').forEach(el => { el.textContent = item[el.dataset.countKey]||'0'; el.classList.remove('depleted'); });
+    return;
+  }
+
+  const isW = activeRoom.startsWith('W');
+  const eff  = effectiveCounts(q_id, activeWeek);
+  if (!eff) return;
+
+  card.querySelectorAll('[data-count-key]').forEach(el => {
+    const val = eff[el.dataset.countKey]; el.textContent = val; el.classList.toggle('depleted', val <= 0);
+  });
+
+  const relevant = isW ? eff.w_count : eff.q_count;
+
+  if (isW && relevant <= 0 && eff.q_count > 0) {
+    card.classList.remove('exhausted'); ab.className = 'avail-badge qavail'; ab.textContent = `Q:${eff.q_count}`;
+  } else if (eff.total_count <= 0 || relevant <= 0) {
+    card.classList.add('exhausted'); ab.className = 'avail-badge none'; ab.textContent = 'NONE';
+  } else {
+    card.classList.remove('exhausted');
+    ab.className = relevant <= 2 ? 'avail-badge low' : 'avail-badge ok';
+    ab.textContent = `x${relevant}`;
+  }
+}
+
+function refreshAllCards() {
+  document.querySelectorAll('.card').forEach(c => updateCardUI(c, c.dataset.qid));
+  updateMobileBadge();
+}
+
+function updateMobileBadge() {
+  let total = 0;
+  if (activeWeek && activeRoom && activeUnit) {
+    const key  = sessionKey(activeRoom, activeUnit);
+    const sess = bookings[activeWeek] && bookings[activeWeek][key];
+    if (sess) total = sess.items.reduce((s, e) => s + e.qty, 0);
+  }
+  document.getElementById('mobile-badge').textContent = total;
+}
+
+/* ═══════════════════════════════════════════════════════
+   BOOKING LOGIC
+═══════════════════════════════════════════════════════ */
+function addBooking(q_id) {
+  if (!activeWeek || !activeRoom || !activeUnit) { flashControls(); return; }
+  const item = catalog.find(r => r.q_id === q_id); if (!item) return;
+  const isW = activeRoom.startsWith('W');
+  const eff  = effectiveCounts(q_id, activeWeek);
+  if (eff && eff.total_count <= 0) return;
+  if (eff && isW  && eff.w_count <= 0 && eff.q_count <= 0) return;
+  if (eff && !isW && eff.q_count <= 0) return;
+
+  const isQOverflow = isW && eff && eff.w_count <= 0 && eff.q_count > 0;
+
+  if (!bookings[activeWeek]) bookings[activeWeek] = {};
+  const key = sessionKey(activeRoom, activeUnit);
+  if (!bookings[activeWeek][key]) bookings[activeWeek][key] = { room: activeRoom, unit: activeUnit, days: [...selectedDays], items: [] };
+
+  const list = bookings[activeWeek][key].items;
+  const existing = list.find(e => e.q_id === q_id);
+  if (existing) { existing.qty++; if (isQOverflow) existing.q_overflow = (existing.q_overflow||0)+1; }
+  else list.push({ q_id, model_name: item.model_name||'', qty: 1, q_overflow: isQOverflow?1:0, comment: '' });
+
+  deduct(q_id, activeWeek, isW && !isQOverflow);
+  renderAllBookingDocs();
+  refreshAllCards();
+}
+
+function removeEntry(q_id, week, key) {
+  if (!bookings[week] || !bookings[week][key]) return;
+  const list = bookings[week][key].items;
+  const idx  = list.findIndex(e => e.q_id === q_id); if (idx === -1) return;
+  const entry = list[idx];
+  const { room } = parseKey(key);
+  const isW = room.startsWith('W');
+  const qOver = entry.q_overflow || 0;
+  const wNorm = entry.qty - qOver;
+  if (wNorm > 0) revertN(q_id, week, isW, wNorm);
+  if (qOver > 0) revertN(q_id, week, false, qOver);
+  list.splice(idx, 1);
+  renderAllBookingDocs();
+  refreshAllCards();
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER BOOKING DOC
+═══════════════════════════════════════════════════════ */
+function renderAllBookingDocs() {
+  getAllContainers().forEach(c => renderBookingDocIn(c));
+}
+
+function renderBookingDocIn(container) {
+  const hint     = container.querySelector('.drop-hint-inner');
+  const metaEl   = container.querySelector('.doc-meta-inner');
+  const titleEl  = container.querySelector('.doc-title-inner');
+  const subEl    = container.querySelector('.doc-sub-inner');
+  const listEl   = container.querySelector('.booking-list-inner');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  if (!activeWeek || !activeRoom || !activeUnit) {
+    if (metaEl) metaEl.style.display = 'none';
+    if (hint) hint.style.opacity = '1';
+    return;
+  }
+
+  const key     = sessionKey(activeRoom, activeUnit);
+  const session = bookings[activeWeek] && bookings[activeWeek][key];
+  const list    = session ? session.items : [];
+
+  if (list.length === 0) {
+    if (metaEl) metaEl.style.display = 'none';
+    if (hint) hint.style.opacity = '1';
+  } else {
+    if (metaEl) metaEl.style.display = 'block';
+    if (hint) hint.style.opacity = '0';
+    const wLabel   = activeWeek === 'exam' ? 'Exam' : `Week ${activeWeek}`;
+    const dayLabel = selectedDays.length ? ` · ${selectedDays.join('-')}` : '';
+    if (titleEl) titleEl.innerHTML = `<em>${wLabel}</em> — ${activeRoom}_${activeUnit}${dayLabel}`;
+    if (subEl)   subEl.textContent = `${list.length} item type${list.length!==1?'s':''} booked`;
+  }
+
+  list.forEach(entry => {
+    const conflict = detectConflict(entry.q_id, activeWeek);
+    const div = document.createElement('div'); div.className = 'booking-entry';
+
+    const numEl = document.createElement('div'); numEl.className = 'entry-num'; numEl.textContent = entry.qty;
+    const body  = document.createElement('div'); body.className = 'entry-body';
+
+    const qidEl   = document.createElement('div'); qidEl.className = 'entry-qid';   qidEl.textContent = entry.q_id;
+    const modelEl = document.createElement('div'); modelEl.className = 'entry-model'; modelEl.textContent = entry.model_name;
+
+    const qMsg = document.createElement('div'); qMsg.className = 'entry-msg qblock';
+    if (entry.q_overflow > 0) { qMsg.textContent = `collect ${entry.q_overflow} from Q block`; qMsg.style.display = 'block'; }
+
+    const cMsg = document.createElement('div'); cMsg.className = 'entry-msg conflict';
+    if (conflict) { cMsg.textContent = conflict; cMsg.style.display = 'block'; }
+
+    const commentEl = document.createElement('textarea'); commentEl.className = 'entry-comment';
+    commentEl.placeholder = 'add a comment…'; commentEl.value = entry.comment || '';
+    commentEl.addEventListener('input', () => { entry.comment = commentEl.value; });
+
+    body.appendChild(qidEl); body.appendChild(modelEl); body.appendChild(qMsg); body.appendChild(cMsg); body.appendChild(commentEl);
+
+    const removeBtn = document.createElement('button'); removeBtn.className = 'entry-remove'; removeBtn.title = 'Remove'; removeBtn.textContent = '✕';
+    removeBtn.addEventListener('click', () => removeEntry(entry.q_id, activeWeek, key));
+
+    div.appendChild(numEl); div.appendChild(body); div.appendChild(removeBtn);
+    listEl.appendChild(div);
+  });
+}
+
+function flashControls() {
+  getAllContainers().forEach(c => {
+    ['.sel-week', '.sel-unit', '.sel-room'].forEach(sel => {
+      const el = c.querySelector(sel); if (!el) return;
+      el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 700);
+    });
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   CLEAR / EXPORT
+═══════════════════════════════════════════════════════ */
+function doClear() {
+  if (!activeWeek || !activeRoom || !activeUnit) return;
+  const key     = sessionKey(activeRoom, activeUnit);
+  const session = bookings[activeWeek] && bookings[activeWeek][key];
+  if (!session) return;
+  const isW = activeRoom.startsWith('W');
+  session.items.forEach(entry => {
+    const qOver = entry.q_overflow || 0;
+    const wNorm = entry.qty - qOver;
+    if (wNorm > 0) revertN(entry.q_id, activeWeek, isW, wNorm);
+    if (qOver > 0) revertN(entry.q_id, activeWeek, false, qOver);
+  });
+  delete bookings[activeWeek][key];
+  renderAllBookingDocs(); refreshAllCards();
+}
+
+function exportCSV() {
+  const totalDed = {};
+  Object.values(weekCounts).forEach(wk => Object.entries(wk).forEach(([q_id, ded]) => {
+    if (!totalDed[q_id]) totalDed[q_id] = { w:0, q:0 };
+    totalDed[q_id].w += ded.w_ded; totalDed[q_id].q += ded.q_ded;
+  }));
+  const headers = ['Q_id','ref_id','model_name','manufacturer','location','W_count','Q_count','Total_count'];
+  const rows = catalog.map(item => {
+    const base = baseCounts[item.q_id]||{}, ded = totalDed[item.q_id]||{w:0,q:0};
+    return [item.q_id,item.ref_id,item.model_name,item.manufacturer,item.location,
+      (base.w_count||0)-ded.w,(base.q_count||0)-ded.q,(base.total_count||0)-ded.w-ded.q
+    ].map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',');
+  });
+  const blob = new Blob([[headers.join(','),...rows].join('\n')],{type:'text/csv'});
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='catalog_updated.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportXLS() {
+  if (typeof XLSX === 'undefined') { alert('SheetJS not loaded yet.'); return; }
+  const wb = XLSX.utils.book_new();
+  WEEK_ORDER.forEach(week => {
+    const weekData = bookings[week];
+    if (!weekData || Object.keys(weekData).length === 0) return;
+    const sessions = Object.values(weekData).filter(s => s.items.length > 0);
+    if (sessions.length === 0) return;
+    const itemMap = {};
+    sessions.forEach(s => s.items.forEach(e => {
+      if (!itemMap[e.q_id]) { const cat = catalog.find(r=>r.q_id===e.q_id)||{}; itemMap[e.q_id]={q_id:e.q_id,ref_id:cat.ref_id||'',model_name:e.model_name,manufacturer:cat.manufacturer||'',location:cat.location||''}; }
+    }));
+    const items = Object.values(itemMap);
+    const fixedCols = ['Q_id / Ref_ID','Model_Name','Manufacturer','Location'];
+    const extraCols = ['Q_block_collect','Conflict','Comments'];
+    const aoa = [];
+    aoa.push([...fixedCols, ...sessions.map(s=>`${s.room}_${s.unit}`), ...extraCols]);
+    aoa.push([...fixedCols.map(()=>''), ...sessions.map(s=>s.days&&s.days.length?s.days.join('-'):''), ...extraCols.map(()=>'')]);
+    items.forEach(item => {
+      const row = [`${item.q_id} / ${item.ref_id}`, item.model_name, item.manufacturer, item.location];
+      let totalQO=0, conflictMsg='', comments=[];
+      sessions.forEach(s => {
+        const e = s.items.find(e=>e.q_id===item.q_id);
+        row.push(e ? e.qty : '');
+        if (e) { totalQO += e.q_overflow||0; if (e.comment) comments.push(e.comment); }
+      });
+      const conf = detectConflict(item.q_id, week); if (conf) conflictMsg = conf;
+      row.push(totalQO > 0 ? `collect ${totalQO} from Q block` : '');
+      row.push(conflictMsg); row.push(comments.join(' | '));
+      aoa.push(row);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wch:18},{wch:28},{wch:18},{wch:14},...sessions.map(()=>({wch:14})),{wch:22},{wch:36},{wch:30}];
+    XLSX.utils.book_append_sheet(wb, ws, week==='exam'?'Exam':`Week ${week}`);
+  });
+  const totalDed = {};
+  Object.values(weekCounts).forEach(wk => Object.entries(wk).forEach(([q_id,ded]) => {
+    if (!totalDed[q_id]) totalDed[q_id]={w:0,q:0}; totalDed[q_id].w+=ded.w_ded; totalDed[q_id].q+=ded.q_ded;
+  }));
+  const catAoa = [['Q_id','Ref_ID','Model_Name','Manufacturer','Location','W_remaining','Q_remaining','Total_remaining']];
+  catalog.forEach(item => {
+    const base=baseCounts[item.q_id]||{}, ded=totalDed[item.q_id]||{w:0,q:0};
+    catAoa.push([item.q_id,item.ref_id,item.model_name,item.manufacturer,item.location,(base.w_count||0)-ded.w,(base.q_count||0)-ded.q,(base.total_count||0)-ded.w-ded.q]);
+  });
+  const wsCat = XLSX.utils.aoa_to_sheet(catAoa);
+  wsCat['!cols'] = [{wch:12},{wch:12},{wch:28},{wch:20},{wch:16},{wch:14},{wch:14},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, wsCat, 'Remaining Counts');
+  if (wb.SheetNames.length === 0) { alert('No bookings to export yet.'); return; }
+  XLSX.writeFile(wb, 'bookings_export.xlsx');
+}
+
+/* ═══════════════════════════════════════════════════════
+   RESIZABLE DIVIDER
+═══════════════════════════════════════════════════════ */
+function initResizer() {
+  const divider  = document.getElementById('divider');
+  const leftPanel  = document.getElementById('catalog-panel');
+  const rightPanel = document.getElementById('booking-panel');
+  const app        = document.getElementById('app');
+  let dragging = false, startX = 0, startLeft = 0;
+
+  divider.addEventListener('mousedown', e => {
+    dragging = true; startX = e.clientX; startLeft = leftPanel.getBoundingClientRect().width;
+    divider.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const appW   = app.getBoundingClientRect().width;
+    const delta  = e.clientX - startX;
+    const newLeft  = Math.max(200, Math.min(startLeft + delta, appW - 280 - 6));
+    const newRight = appW - newLeft - 6;
+    leftPanel.style.flex  = 'none';
+    leftPanel.style.width = `${newLeft}px`;
+    rightPanel.style.width = `${newRight}px`;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    divider.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+
+  // touch support
+  divider.addEventListener('touchstart', e => {
+    dragging = true; startX = e.touches[0].clientX; startLeft = leftPanel.getBoundingClientRect().width;
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    const appW = app.getBoundingClientRect().width;
+    const delta = e.touches[0].clientX - startX;
+    const newLeft  = Math.max(200, Math.min(startLeft + delta, appW - 280 - 6));
+    const newRight = appW - newLeft - 6;
+    leftPanel.style.flex  = 'none';
+    leftPanel.style.width = `${newLeft}px`;
+    rightPanel.style.width = `${newRight}px`;
+  }, { passive: true });
+  document.addEventListener('touchend', () => { dragging = false; });
+}
+
+/* ═══════════════════════════════════════════════════════
+   MOBILE OVERLAY
+═══════════════════════════════════════════════════════ */
+document.getElementById('mobile-booking-btn').addEventListener('click', () => {
+  const overlay = document.getElementById('mobile-overlay');
+  overlay.classList.add('open');
+  renderAllBookingDocs();
+});
+document.getElementById('mobile-sheet-close').addEventListener('click', () => {
+  document.getElementById('mobile-overlay').classList.remove('open');
+});
+document.getElementById('mobile-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('mobile-overlay'))
+    document.getElementById('mobile-overlay').classList.remove('open');
+});
+
+/* ═══════════════════════════════════════════════════════
+   CLICK OUTSIDE = UNPIN
+═══════════════════════════════════════════════════════ */
+document.addEventListener('click', () => {
+  if (pinnedCard) { pinnedCard.classList.remove('pinned'); pinnedCard = null; document.getElementById('hint').classList.remove('visible'); }
+});
+
+/* ═══════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════ */
+async function init() {
+  // Build booking UI into both containers
+  buildBookingUI(document.getElementById('booking-inner-desktop'));
+  buildBookingUI(document.getElementById('booking-inner-mobile'));
+
+  initResizer();
+
+  let text;
+  try {
+    const resp = await fetch(CSV_PATH);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    text = await resp.text();
+  } catch (err) {
+    document.getElementById('grid').innerHTML = `<p style="color:var(--muted);font-size:0.8rem;padding:20px">Could not load ${CSV_PATH}: ${err.message}</p>`;
+    return;
+  }
+
+  catalog = parseCSV(text);
+  initCounts();
+  document.getElementById('item-count').textContent = `${catalog.length} item${catalog.length!==1?'s':''}`;
+  const resolved = await Promise.all(catalog.map(item => findImage(item.q_id)));
+  catalog.forEach((item, i) => document.getElementById('grid').appendChild(buildCard(item, resolved[i])));
+}
+
+/* ═══════════════════════════════════════════════════════
+   DOCUMENT IMPORT
+═══════════════════════════════════════════════════════ */
+
+// Set PDF.js worker
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+let importParsedData = null; // holds parsed result before commit
+
+/* ── Open / close modal ── */
+document.getElementById('btn-import').addEventListener('click', () => {
+  resetImportModal();
+  document.getElementById('import-modal').classList.add('open');
+});
+document.getElementById('import-close').addEventListener('click', closeImportModal);
+document.getElementById('btn-import-cancel').addEventListener('click', closeImportModal);
+document.getElementById('import-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('import-modal')) closeImportModal();
+});
+
+function closeImportModal() {
+  document.getElementById('import-modal').classList.remove('open');
+  resetImportModal();
+}
+function resetImportModal() {
+  importParsedData = null;
+  document.getElementById('import-file-name').textContent = '';
+  document.getElementById('import-status').textContent = '';
+  document.getElementById('import-status').className = '';
+  document.getElementById('import-preview').innerHTML = '';
+  document.getElementById('import-preview').classList.remove('visible');
+  document.getElementById('btn-import-submit').disabled = true;
+  document.getElementById('import-file-input').value = '';
+}
+
+/* ── File input & drag/drop ── */
+const importDZ    = document.getElementById('import-dropzone');
+const importInput = document.getElementById('import-file-input');
+
+importDZ.addEventListener('dragover',  e => { e.preventDefault(); importDZ.classList.add('dragover'); });
+importDZ.addEventListener('dragleave', () => importDZ.classList.remove('dragover'));
+importDZ.addEventListener('drop', e => {
+  e.preventDefault(); importDZ.classList.remove('dragover');
+  const f = e.dataTransfer.files[0]; if (f) handleImportFile(f);
+});
+importInput.addEventListener('change', () => {
+  const f = importInput.files[0]; if (f) handleImportFile(f);
+});
+
+/* ── Handle uploaded file ── */
+async function handleImportFile(file) {
+  const nameEl   = document.getElementById('import-file-name');
+  const statusEl = document.getElementById('import-status');
+  nameEl.textContent = file.name;
+  statusEl.className = '';
+  statusEl.textContent = 'Reading file…';
+  document.getElementById('import-preview').classList.remove('visible');
+  document.getElementById('btn-import-submit').disabled = true;
+
+  try {
+    let text = '';
+    const ext = file.name.split('.').pop().toLowerCase();
+
+    if (ext === 'docx' || ext === 'doc') {
+      if (typeof mammoth === 'undefined') throw new Error('mammoth.js not loaded');
+      const buf = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer: buf });
+      text = result.value;
+    } else if (ext === 'pdf') {
+      if (typeof pdfjsLib === 'undefined') throw new Error('PDF.js not loaded');
+      const buf  = await file.arrayBuffer();
+      const pdf  = await pdfjsLib.getDocument({ data: buf }).promise;
+      const parts = [];
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page    = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        parts.push(content.items.map(i => i.str).join(' '));
+      }
+      text = parts.join('\n');
+    } else {
+      throw new Error('Unsupported file type. Please upload a .docx or .pdf file.');
+    }
+
+    statusEl.textContent = 'Parsing document…';
+    const parsed = parseBookingDocument(text);
+
+    if (!parsed.sessions.length) {
+      statusEl.className = 'error';
+      statusEl.textContent = 'No bookable items found. Check the document format.';
+      return;
+    }
+
+    importParsedData = parsed;
+    renderImportPreview(parsed);
+    const matched   = parsed.sessions.reduce((s,sess) => s + sess.items.filter(i=>i.catalogItem).length, 0);
+    const unmatched = parsed.sessions.reduce((s,sess) => s + sess.items.filter(i=>!i.catalogItem).length, 0);
+    statusEl.className = unmatched > 0 ? '' : 'ok';
+    statusEl.textContent = matched + ' item(s) matched' + (unmatched > 0 ? ', ' + unmatched + ' unmatched (shown in red)' : ' — all matched!');
+    document.getElementById('btn-import-submit').disabled = matched === 0;
+
+  } catch (err) {
+    statusEl.className = 'error';
+    statusEl.textContent = 'Error: ' + err.message;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   DOCUMENT PARSER
+   Extracts: unit code, week numbers, items (with ref/qty)
+═══════════════════════════════════════════════════════ */
+function parseBookingDocument(text) {
+  // Normalise whitespace
+  const lines = text.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+  const full  = lines.join('\n');
+
+  // ── Extract unit code ──────────────────────────────
+  let unit = '';
+  const unitPatterns = [
+    /Unit\s+(?:Name\/Code|Code|Name)\s*[:\-–—]\s*([A-Z]{2,4}\d{3,4})/i,
+    /\b(LS[A-Z]\d{3,4}|LQ[A-Z]\d{3,4})\b/,
+  ];
+  for (const p of unitPatterns) {
+    const m = full.match(p);
+    if (m) { unit = m[1].toUpperCase().trim(); break; }
+  }
+
+  // ── Split into per-week sections ───────────────────
+  // Look for lines that are just a number (1-13) or "Week N"
+  const weekSections = [];
+  let currentWeek  = null;
+  let currentLines = [];
+
+  for (const line of lines) {
+    // Match standalone week number or "Week N" header
+    const weekMatch = line.match(/^(?:week\s+)?(\d{1,2})\s*(?:\(column\s*\d+\))?$/i)
+                   || line.match(/^(?:row\s+\d+:\s*)?(?:week\s+)?(\d{1,2})\s*$/i);
+    if (weekMatch) {
+      const wNum = parseInt(weekMatch[1]);
+      if (wNum >= 1 && wNum <= 13) {
+        if (currentWeek !== null && currentLines.length) {
+          weekSections.push({ week: String(currentWeek), lines: currentLines });
+        }
+        currentWeek  = wNum;
+        currentLines = [];
+        continue;
+      }
+    }
+    if (currentWeek !== null) currentLines.push(line);
+  }
+  if (currentWeek !== null && currentLines.length) {
+    weekSections.push({ week: String(currentWeek), lines: currentLines });
+  }
+
+  // ── Parse items from each week section ────────────
+  const sessions = [];
+
+  weekSections.forEach(({ week, lines: wLines }) => {
+    const items = [];
+    const sectionText = wLines.join(' ');
+
+    // Skip weeks with no-practical indicators
+    if (/no\s+practical|no\s+materials?\s+required/i.test(sectionText)) return;
+
+    // Extract items: bullet points or lines containing a parenthesised code
+    // Pattern: optional "Nx " quantity, then name, then (CODE) — or just (CODE)
+    // Also handles "N x Name (CODE)" and "Name (CODE/NUM)"
+    const itemPattern = /(\d+)?\s*[x×]?\s*([^\n\(]{2,60}?)\s*\(([A-Z]{1,4}\d+(?:[\/.\-]\d+)?)\)/gi;
+
+    let match;
+    while ((match = itemPattern.exec(sectionText)) !== null) {
+      const rawQty  = match[1] ? parseInt(match[1]) : 1;
+      const rawName = match[2].replace(/^[·•\-\*\s]+/, '').trim();
+      const rawCode = match[3].trim();
+
+      if (!rawName && !rawCode) continue;
+
+      // Match against catalog: Q_id first, then ref_id, then model name
+      const catalogItem = findCatalogItem(rawCode, rawName);
+
+      items.push({
+        rawName,
+        rawCode,
+        qty: rawQty,
+        catalogItem,
+      });
+    }
+
+    // Deduplicate: same catalogItem → sum qty
+    const deduped = [];
+    items.forEach(item => {
+      const key = item.catalogItem ? item.catalogItem.q_id : (item.rawCode + '|' + item.rawName);
+      const existing = deduped.find(d => (d.catalogItem ? d.catalogItem.q_id : (d.rawCode + '|' + d.rawName)) === key);
+      if (existing) existing.qty += item.qty;
+      else deduped.push({ ...item });
+    });
+
+    if (deduped.length > 0) {
+      sessions.push({ week, unit, items: deduped });
+    }
+  });
+
+  return { unit, sessions };
+}
+
+/* ── Catalog lookup: q_id → ref_id → model_name ── */
+function findCatalogItem(code, name) {
+  // 1. Try q_id exact match
+  let found = catalog.find(r => r.q_id && r.q_id.toString().toLowerCase() === code.toLowerCase());
+  if (found) return found;
+
+  // 2. Try ref_id exact match
+  found = catalog.find(r => r.ref_id && r.ref_id.toString().toLowerCase() === code.toLowerCase());
+  if (found) return found;
+
+  // 3. Try ref_id without slash variants (QS10/1 → QS101 or QS10)
+  const codeBase = code.replace(/[\/\.\-]/g, '').toLowerCase();
+  found = catalog.find(r => r.ref_id && r.ref_id.toString().replace(/[\/\.\-]/g, '').toLowerCase() === codeBase);
+  if (found) return found;
+
+  // 4. Try model name fuzzy match (contains)
+  if (name && name.length > 3) {
+    const nameLower = name.toLowerCase();
+    found = catalog.find(r => r.model_name && r.model_name.toLowerCase().includes(nameLower));
+    if (found) return found;
+    // reverse: catalog name contains search name
+    found = catalog.find(r => r.model_name && nameLower.includes(r.model_name.toLowerCase()) && r.model_name.length > 3);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+/* ── Render preview table ── */
+function renderImportPreview(parsed) {
+  const container = document.getElementById('import-preview');
+  container.innerHTML = '';
+
+  parsed.sessions.forEach(session => {
+    const block = document.createElement('div');
+    block.className = 'preview-unit-block';
+
+    const header = document.createElement('div');
+    header.className = 'preview-unit-header';
+    header.innerHTML =
+      (session.unit ? `<span>UNIT <em>${session.unit}</em></span>` : '<span>UNIT <em>unknown</em></span>') +
+      `<span>WEEK <em>${session.week}</em></span>` +
+      `<span>${session.items.length} item(s)</span>`;
+    block.appendChild(header);
+
+    const table = document.createElement('table');
+    table.className = 'preview-table';
+    table.innerHTML = `<thead><tr>
+      <th>CODE (doc)</th><th>NAME (doc)</th><th>QTY</th><th>MATCHED TO</th>
+    </tr></thead>`;
+    const tbody = document.createElement('tbody');
+
+    session.items.forEach(item => {
+      const tr = document.createElement('tr');
+      const matchText = item.catalogItem
+        ? `${item.catalogItem.q_id} — ${item.catalogItem.model_name}`
+        : '— no match';
+      const matchClass = item.catalogItem ? 'matched' : 'unmatched';
+      tr.innerHTML = `
+        <td>${item.rawCode}</td>
+        <td>${item.rawName || '—'}</td>
+        <td>${item.qty}</td>
+        <td class="${matchClass}">${matchText}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    block.appendChild(table);
+    container.appendChild(block);
+  });
+
+  container.classList.add('visible');
+}
+
+/* ── Submit: apply parsed data to booking state ── */
+document.getElementById('btn-import-submit').addEventListener('click', () => {
+  if (!importParsedData) return;
+  const mode = document.getElementById('import-mode').value;
+
+  importParsedData.sessions.forEach(session => {
+    const week = session.week;
+    const unit = session.unit || activeUnit;
+    // Room is not in the document — use activeRoom if set, else leave blank (user picks after)
+    const room = activeRoom || '';
+
+    if (!week) return;
+
+    if (!bookings[week]) bookings[week] = {};
+
+    // If replace mode, clear existing bookings for this week+unit across all rooms
+    if (mode === 'replace') {
+      Object.keys(bookings[week]).forEach(key => {
+        const { unit: ku } = parseKey(key);
+        if (ku === unit) {
+          const sess = bookings[week][key];
+          const isW  = key.split('||')[0].startsWith('W');
+          sess.items.forEach(e => {
+            const qOver = e.q_overflow || 0;
+            const wNorm = e.qty - qOver;
+            if (wNorm > 0) revertN(e.q_id, week, isW, wNorm);
+            if (qOver  > 0) revertN(e.q_id, week, false, qOver);
+          });
+          delete bookings[week][key];
+        }
+      });
+    }
+
+    // We need a room to create a session key — if no room selected, use a placeholder
+    const effectiveRoom = room || '_IMPORTED_';
+    const key = sessionKey(effectiveRoom, unit);
+
+    if (!bookings[week][key]) {
+      bookings[week][key] = { room: effectiveRoom, unit, days: [...selectedDays], items: [] };
+    }
+
+    session.items.forEach(item => {
+      if (!item.catalogItem) return; // skip unmatched
+      const q_id = item.catalogItem.q_id;
+      const isW  = effectiveRoom.startsWith('W');
+      const eff  = effectiveCounts(q_id, week);
+
+      // Add qty one at a time so overflow logic applies correctly
+      for (let i = 0; i < item.qty; i++) {
+        const effNow    = effectiveCounts(q_id, week);
+        if (!effNow || effNow.total_count <= 0) break;
+        const isQOverflow = isW && effNow.w_count <= 0 && effNow.q_count > 0;
+
+        const list     = bookings[week][key].items;
+        const existing = list.find(e => e.q_id === q_id);
+        if (existing) {
+          existing.qty++;
+          if (isQOverflow) existing.q_overflow = (existing.q_overflow || 0) + 1;
+        } else {
+          list.push({ q_id, model_name: item.catalogItem.model_name || '', qty: 1, q_overflow: isQOverflow ? 1 : 0, comment: '' });
+        }
+        deduct(q_id, week, isW && !isQOverflow);
+      }
+    });
+  });
+
+  // Update active selectors to the imported unit if we found one
+  if (importParsedData.unit && ALL_UNITS.includes(importParsedData.unit)) {
+    activeUnit = importParsedData.unit;
+    syncAllInstances('unit', activeUnit);
+    // Set week to first imported week
+    if (importParsedData.sessions.length > 0) {
+      activeWeek = importParsedData.sessions[0].week;
+      syncAllInstances('week', activeWeek);
+    }
+  }
+
+  closeImportModal();
+  renderAllBookingDocs();
+  refreshAllCards();
+});
+
+init();
+</script>
+</body>
+</html>
