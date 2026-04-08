@@ -465,6 +465,7 @@
   <!-- LEFT: image grid -->
   <div id="catalog-panel">
     <div id="catalog-header">CATALOG — drag or double-click to book</div>
+    
   <!-- ==== CATALOG SEARCH BAR (ADD) ==== -->
     <div id="catalog-search" style="padding:10px 16px;border-bottom:1px solid var(--border);">
       <input
@@ -483,6 +484,7 @@
         "
       />
     </div>
+    
     <div id="grid"></div>
   </div>
 
@@ -1558,30 +1560,52 @@ function initResizer() {
 /* ==== SECOND RESIZER (QUERY) ==== */
 function initQueryResizer(){
   const divider = document.getElementById('divider-query');
-  const booking = document.getElementById('booking-panel');
-  const query = document.getElementById('query-panel');
+  const leftPanel = document.getElementById('booking-panel');
+  const rightPanel = document.getElementById('query-panel');
   const app = document.getElementById('app');
-  if (!divider) return;
   let dragging = false, startX = 0, startW = 0;
 
   divider.addEventListener('mousedown', e => {
-    dragging = true;
-    startX = e.clientX;
-    startW = query.getBoundingClientRect().width;
+    dragging = true; startX = e.clientX; startLeft = leftPanel.getBoundingClientRect().width;
+    divider.classList.add('dragging');
     document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
   });
 
   document.addEventListener('mousemove', e => {
     if (!dragging) return;
-    const dx = startX - e.clientX;
-    const newW = Math.max(240, Math.min(startW + dx, app.clientWidth - 300));
-    query.style.width = newW + 'px';
+    const appW   = app.getBoundingClientRect().width;
+    const delta  = e.clientX - startX;
+    const newLeft  = Math.max(200, Math.min(startLeft + delta, appW - 280 - 6));
+    const newRight = appW - newLeft - 6;
+    leftPanel.style.flex  = 'none';
+    leftPanel.style.width = `${newLeft}px`;
+    rightPanel.style.width = `${newRight}px`;
   });
 
   document.addEventListener('mouseup', () => {
+    if (!dragging) return;
     dragging = false;
+    divider.classList.remove('dragging');
     document.body.style.cursor = '';
+    document.body.style.userSelect = '';
   });
+
+  // touch support
+  divider.addEventListener('touchstart', e => {
+    dragging = true; startX = e.touches[0].clientX; startLeft = leftPanel.getBoundingClientRect().width;
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    const appW = app.getBoundingClientRect().width;
+    const delta = e.touches[0].clientX - startX;
+    const newLeft  = Math.max(200, Math.min(startLeft + delta, appW - 280 - 6));
+    const newRight = appW - newLeft - 6;
+    leftPanel.style.flex  = 'none';
+    leftPanel.style.width = `${newLeft}px`;
+    rightPanel.style.width = `${newRight}px`;
+  }, { passive: true });
+  document.addEventListener('touchend', () => { dragging = false; });
 }
 
 /* ═══════════════════════════════════════════════════════
