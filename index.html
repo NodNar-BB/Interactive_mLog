@@ -1,0 +1,2126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Image Catalog</title>
+  <script src="xlsx.full.min.js"></script>
+  <script src="mammoth.browser.min.js"></script>
+  <script src="pdf.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Fraunces:ital,wght@0,300;0,600;1,300&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0f0f0f;
+      --surface:    #1a1a1a;
+      --surface2:   #141414;
+      --border:     #2e2e2e;
+      --accent:     #c8f55a;
+      --accent-dim: #8aaa35;
+      --text:       #e8e4dc;
+      --muted:      #666;
+      --danger:     #ff4d4d;
+      --danger-bg:  #2a0a0a;
+      --warn:       #ffb400;
+      --warn-bg:    #2a1f00;
+      --popup-bg:   #111;
+      --radius:     4px;
+      --gap:        14px;
+      --header-h:   56px;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; overflow: hidden; }
+
+    /* ═══════════════════════════════════
+       TOPBAR
+    ═══════════════════════════════════ */
+    #topbar {
+      height: var(--header-h);
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    #topbar h1 { font-family: 'Fraunces', serif; font-weight: 300; font-size: 1.3rem; letter-spacing: -0.02em; flex-shrink: 0; }
+    #topbar h1 em { font-style: italic; color: var(--accent); }
+    #item-count { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.08em; }
+
+    /* topbar right buttons */
+    .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .topbar-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+      padding: 5px 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.15s;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .topbar-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .topbar-btn.accent { background: rgba(200,245,90,0.08); border-color: var(--accent-dim); color: var(--accent); }
+    .topbar-btn.accent:hover { background: rgba(200,245,90,0.15); }
+
+    /* mobile booking button */
+    #mobile-booking-btn {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      padding: 6px 12px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #mobile-booking-btn .badge {
+      background: var(--accent);
+      color: #000;
+      font-size: 0.6rem;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 10px;
+      min-width: 18px;
+      text-align: center;
+    }
+
+    /* ═══════════════════════════════════
+       TWO-COLUMN LAYOUT
+    ═══════════════════════════════════ */
+    #app {
+      display: flex;
+      height: calc(100vh - var(--header-h));
+      overflow: hidden;
+    }
+
+    /* LEFT: Catalog */
+    #catalog-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 200px;
+      flex: 1 1 0;
+    }
+    #catalog-header { padding: 10px 16px; font-size: 0.65rem; letter-spacing: 0.1em; color: var(--muted); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--gap); padding: 16px; overflow-y: auto; flex: 1; }
+
+    /* DIVIDER */
+    #divider {
+      width: 6px;
+      background: var(--border);
+      cursor: col-resize;
+      flex-shrink: 0;
+      transition: background 0.15s;
+      position: relative;
+      z-index: 10;
+    }
+    #divider:hover, #divider.dragging { background: var(--accent-dim); }
+    #divider::after {
+      content: '⋮';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--muted);
+      font-size: 1rem;
+      pointer-events: none;
+    }
+
+    /* RIGHT: Booking panel */
+    #booking-panel {
+      width: 420px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface2);
+      overflow: hidden;
+      min-width: 280px;
+    }
+    .booking-inner { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+    #booking-header { padding: 10px 16px; font-size: 0.65rem; letter-spacing: 0.1em; color: var(--muted); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+
+    /* ═══════════════════════════════════
+       CARD
+    ═══════════════════════════════════ */
+    .card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); cursor: grab; transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s; user-select: none; }
+    .card:hover  { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.5); }
+    .card.pinned { border-color: var(--accent); }
+    .card.dragging { opacity: 0.4; transform: scale(0.97); }
+    .card.exhausted { cursor: not-allowed; opacity: 0.5; }
+    .card.exhausted:hover { transform: none; box-shadow: none; border-color: var(--border); }
+
+    .card img { display: block; width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: var(--radius) var(--radius) 0 0; background: #222; pointer-events: none; }
+    .card-label { padding: 6px 8px; font-size: 0.6rem; color: var(--muted); letter-spacing: 0.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-top: 1px solid var(--border); }
+
+    /* mobile qty overlay */
+    .card-qty-overlay {
+      display: none;
+      position: absolute;
+      bottom: 28px;
+      right: 5px;
+      background: rgba(200,245,90,0.85);
+      color: #000;
+      font-family: 'Fraunces', serif;
+      font-weight: 600;
+      font-size: 1.4rem;
+      line-height: 1;
+      padding: 3px 7px;
+      border-radius: 3px;
+      pointer-events: none;
+    }
+
+    .avail-badge { position: absolute; top: 5px; left: 5px; font-size: 0.55rem; padding: 2px 5px; border-radius: 2px; letter-spacing: 0.06em; pointer-events: none; }
+    .avail-badge.ok     { background: rgba(200,245,90,0.15); color: var(--accent); border: 1px solid var(--accent-dim); }
+    .avail-badge.low    { background: rgba(255,180,0,0.12);  color: var(--warn);   border: 1px solid #7a5500; }
+    .avail-badge.none   { background: var(--danger-bg);      color: var(--danger); border: 1px solid #7a0000; }
+    .avail-badge.qavail { background: rgba(255,180,0,0.15);  color: var(--warn);   border: 1px solid #7a5500; }
+
+    /* Popup */
+    .popup { display: none; position: absolute; z-index: 200; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); min-width: 200px; max-width: 260px; background: var(--popup-bg); border: 1px solid var(--accent); border-radius: var(--radius); padding: 12px 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.7); pointer-events: none; }
+    .card:hover .popup  { display: block; }
+    .card.pinned .popup { display: block; pointer-events: auto; }
+    .popup::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--accent); }
+    .popup-name { font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.95rem; color: var(--accent); margin-bottom: 6px; }
+    .popup-row  { display: flex; gap: 8px; margin-bottom: 3px; font-size: 0.65rem; line-height: 1.4; }
+    .popup-row .lbl { color: var(--muted); flex-shrink: 0; width: 64px; letter-spacing: 0.05em; }
+    .popup-row .val { color: var(--text); word-break: break-word; user-select: text; }
+    .popup-row .val.depleted { color: var(--danger); font-weight: 500; }
+    .pin-badge { display: none; position: absolute; top: 5px; right: 5px; background: var(--accent); color: #000; font-size: 0.55rem; padding: 2px 5px; border-radius: 2px; font-weight: 500; }
+    .card.pinned .pin-badge { display: block; }
+
+    /* ═══════════════════════════════════
+       BOOKING CONTROLS + DROP ZONE
+    ═══════════════════════════════════ */
+    .ctrl-row { display: flex; align-items: flex-start; gap: 10px; }
+    .ctrl-row label { font-size: 0.65rem; letter-spacing: 0.08em; color: var(--muted); width: 52px; flex-shrink: 0; padding-top: 6px; }
+    .ctrl-row select { flex: 1; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 8px; font-family: 'DM Mono', monospace; font-size: 0.72rem; outline: none; cursor: pointer; transition: border-color 0.15s; }
+    .ctrl-row select:focus { border-color: var(--accent); }
+    .ctrl-row select.flash { border-color: var(--danger) !important; }
+
+    .days-group { display: flex; gap: 5px; flex-wrap: wrap; flex: 1; }
+    .day-btn { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: var(--radius); padding: 4px 8px; font-family: 'DM Mono', monospace; font-size: 0.65rem; cursor: pointer; transition: all 0.12s; letter-spacing: 0.05em; }
+    .day-btn.active { background: rgba(200,245,90,0.12); border-color: var(--accent-dim); color: var(--accent); }
+
+    .day-time-list { display: flex; flex-direction: column; gap: 5px; flex: 1; }
+    .day-time-row { display: flex; align-items: center; gap: 6px; animation: slideIn 0.15s ease; }
+    .day-time-tag { font-size: 0.62rem; color: var(--accent); background: rgba(200,245,90,0.1); border: 1px solid var(--accent-dim); border-radius: 2px; padding: 2px 7px; min-width: 38px; text-align: center; flex-shrink: 0; }
+    .day-time-input { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.62rem; padding: 3px 7px; outline: none; transition: border-color 0.15s; min-width: 0; }
+    .day-time-input:focus { border-color: var(--accent-dim); }
+    .day-time-input::placeholder { color: #444; }
+
+    /* Drop zone / Booking list */
+    #drop-zone { flex: 1; overflow-y: auto; padding: 14px 16px; position: relative; }
+
+    #booking-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .booking-entry { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); animation: slideIn 0.18s ease; }
+    @keyframes slideIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: none; } }
+    .entry-num { font-family: 'Fraunces', serif; font-size: 1.5rem; font-weight: 600; color: var(--accent); line-height: 1; min-width: 28px; text-align: right; flex-shrink: 0; }
+    .entry-body { flex: 1; min-width: 0; }
+    .entry-qid   { font-size: 0.78rem; color: var(--text); font-weight: 500; }
+    .entry-model { font-size: 0.63rem; color: var(--muted); margin-top: 2px; }
+    .entry-msg   { font-size: 0.62rem; margin-top: 4px; padding: 3px 6px; border-radius: 2px; display: none; }
+    .entry-msg.qblock   { display: block; background: var(--warn-bg);   color: var(--warn);   border: 1px solid #5a3d00; }
+    .entry-msg.conflict { display: block; background: var(--danger-bg); color: var(--danger); border: 1px solid #7a0000; }
+
+    .session-comment-wrap { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; flex-shrink: 0; }
+    .session-comment-label { font-size: 0.6rem; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 5px; }
+    .session-comment { width: 100%; background: #0f0f0f; border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.62rem; padding: 5px 7px; resize: vertical; min-height: 52px; outline: none; transition: border-color 0.15s; }
+    .session-comment:focus { border-color: var(--accent-dim); }
+    .session-comment::placeholder { color: #444; }
+
+    .entry-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 2px; transition: color 0.15s; flex-shrink: 0; }
+    .entry-remove:hover { color: var(--danger); }
+
+    /* Bottom bar */
+    #bottom-bar { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+    .btn { flex: 1; padding: 8px 10px; border-radius: var(--radius); font-family: 'DM Mono', monospace; font-size: 0.65rem; letter-spacing: 0.06em; cursor: pointer; border: 1px solid var(--border); transition: all 0.15s; }
+    .btn-primary { background: var(--accent); color: #000; border-color: var(--accent); }
+    .btn-primary:hover { background: #d8ff6a; }
+    .btn-ghost { background: transparent; color: var(--muted); }
+    .btn-ghost:hover { border-color: var(--muted); color: var(--text); }
+
+    /* Unpin hint */
+    #hint { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-size: 0.62rem; letter-spacing: 0.08em; padding: 6px 16px; border-radius: 100px; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 500; }
+    #hint.visible { opacity: 1; }
+
+    /* ═══════════════════════════════════
+       SEARCH BAR
+    ═══════════════════════════════════ */
+    #catalog-search-wrap { padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; }
+    #catalog-search { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.7rem; padding: 5px 28px 5px 10px; outline: none; transition: border-color 0.15s; }
+    #catalog-search:focus { border-color: var(--accent-dim); }
+    #catalog-search::placeholder { color: #444; }
+    #catalog-search-clear { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.9rem; display: none; line-height: 1; padding: 2px; }
+    #catalog-search-clear.visible { display: block; }
+    .card.hidden-by-search { display: none; }
+
+    /* ═══════════════════════════════════
+       SEMESTER START
+    ═══════════════════════════════════ */
+    #semester-wrap { padding: 8px 16px 0; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+    #semester-wrap label { font-size: 0.62rem; color: var(--muted); letter-spacing: 0.07em; white-space: nowrap; }
+    #semester-start { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.68rem; padding: 4px 8px; outline: none; transition: border-color 0.15s; flex: 1; }
+    #semester-start:focus { border-color: var(--accent-dim); }
+    #current-week-badge { font-size: 0.6rem; color: var(--accent); background: rgba(200,245,90,0.1); border: 1px solid var(--accent-dim); border-radius: 2px; padding: 2px 6px; white-space: nowrap; flex-shrink: 0; display: none; }
+    #current-week-badge.visible { display: block; }
+
+    /* ═══════════════════════════════════
+       DROP HINT / DOC META
+    ═══════════════════════════════════ */
+    .drop-hint-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; pointer-events: none; transition: opacity 0.2s; }
+    .drop-hint-inner p { font-size: 0.68rem; color: var(--muted); text-align: center; line-height: 1.6; }
+    .doc-meta-inner { display: none; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+    .doc-meta-inner h2 { font-family: 'Fraunces', serif; font-weight: 300; font-size: 1rem; color: var(--text); margin-bottom: 3px; }
+    .doc-meta-inner h2 em { font-style: italic; color: var(--accent); }
+    .doc-meta-inner p { font-size: 0.63rem; color: var(--muted); }
+
+    /* ═══════════════════════════════════
+       QUERY MODAL (replaces 3rd column)
+    ═══════════════════════════════════ */
+    #query-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 600;
+      background: rgba(0,0,0,0.65);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #query-modal.open { display: flex; }
+    #query-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 100%;
+      max-width: 560px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.8);
+    }
+    #query-modal-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #query-modal-header span { font-size: 0.68rem; letter-spacing: 0.1em; color: var(--muted); }
+    #query-modal-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.2rem; line-height: 1; transition: color 0.15s; }
+    #query-modal-close:hover { color: var(--text); }
+    #query-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .q-msg { font-size: 0.72rem; line-height: 1.55; border-radius: var(--radius); padding: 8px 12px; max-width: 100%; word-break: break-word; }
+    .q-msg.user   { background: rgba(200,245,90,0.08); border: 1px solid var(--accent-dim); color: var(--text); align-self: flex-end; }
+    .q-msg.system { background: var(--surface2); border: 1px solid var(--border); color: var(--text); align-self: flex-start; }
+    .q-msg.system em { color: var(--accent); font-style: normal; }
+    .q-msg.system .warn   { color: var(--warn); }
+    .q-msg.system .danger { color: var(--danger); }
+    .q-msg.hint { background: transparent; border: none; color: var(--muted); font-size: 0.65rem; align-self: flex-start; padding: 0 0 4px; }
+    #query-input-wrap { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+    #query-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.7rem; padding: 7px 10px; outline: none; transition: border-color 0.15s; }
+    #query-input:focus { border-color: var(--accent-dim); }
+    #query-input::placeholder { color: #444; }
+    #query-send { background: var(--accent); border: none; border-radius: var(--radius); color: #000; font-family: 'DM Mono', monospace; font-size: 0.65rem; padding: 7px 14px; cursor: pointer; flex-shrink: 0; transition: background 0.15s; letter-spacing: 0.05em; }
+    #query-send:hover { background: #d8ff6a; }
+
+    /* ═══════════════════════════════════
+       MOBILE BOOKING SHEET OVERLAY
+    ═══════════════════════════════════ */
+    #mobile-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 400;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(3px);
+      align-items: flex-end;
+    }
+    #mobile-overlay.open { display: flex; }
+    #mobile-sheet {
+      width: 100%;
+      max-height: 88vh;
+      background: var(--surface2);
+      border-radius: 16px 16px 0 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: sheetUp 0.25s ease;
+    }
+    @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    #mobile-sheet-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px; margin: 10px auto 6px; flex-shrink: 0; }
+    #mobile-sheet-header { padding: 8px 16px 10px; font-size: 0.65rem; letter-spacing: 0.1em; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+    #mobile-sheet-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.2rem; line-height: 1; }
+    #mobile-sheet .booking-inner { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+    /* ═══════════════════════════════════
+       IMPORT MODAL
+    ═══════════════════════════════════ */
+    #import-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 650;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #import-modal.open { display: flex; }
+    #import-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 100%;
+      max-width: 640px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.8);
+    }
+    #import-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; flex-shrink: 0; gap: 10px; }
+    #import-header > span:first-child { font-size: 0.68rem; letter-spacing: 0.1em; color: var(--muted); }
+    .import-format-wrap { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 0.62rem; color: var(--muted); }
+    .import-format-wrap select { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px 6px; font-family: 'DM Mono', monospace; font-size: 0.62rem; outline: none; cursor: pointer; }
+    #import-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.2rem; line-height: 1; }
+    #import-body { padding: 20px 18px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+    #import-dropzone { border: 2px dashed var(--border); border-radius: 6px; padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.15s; position: relative; }
+    #import-dropzone:hover, #import-dropzone.dragover { border-color: var(--accent-dim); background: rgba(200,245,90,0.03); }
+    #import-dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    #import-dropzone .dz-icon { font-size: 2rem; margin-bottom: 8px; opacity: 0.35; }
+    #import-dropzone p { font-size: 0.7rem; color: var(--muted); line-height: 1.7; }
+    #import-dropzone p strong { color: var(--text); }
+    #import-file-name { font-size: 0.68rem; color: var(--accent); text-align: center; min-height: 18px; }
+    #import-status { font-size: 0.68rem; color: var(--muted); text-align: center; min-height: 20px; }
+    #import-status.error { color: var(--danger); }
+    #import-status.ok    { color: var(--accent); }
+    #import-preview { display: none; flex-direction: column; gap: 10px; }
+    #import-preview.visible { display: flex; }
+    .preview-unit-block { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .preview-unit-header { padding: 8px 12px; background: #111; font-size: 0.65rem; letter-spacing: 0.08em; color: var(--accent); display: flex; gap: 10px; flex-wrap: wrap; }
+    .preview-unit-header span { color: var(--muted); }
+    .preview-unit-header span em { color: var(--text); font-style: normal; }
+    .preview-table { width: 100%; border-collapse: collapse; font-size: 0.65rem; }
+    .preview-table th { padding: 6px 10px; background: #0a0a0a; color: var(--muted); letter-spacing: 0.06em; text-align: left; border-bottom: 1px solid var(--border); }
+    .preview-table td { padding: 6px 10px; border-bottom: 1px solid #1a1a1a; color: var(--text); vertical-align: top; }
+    .preview-table tr:last-child td { border-bottom: none; }
+    .preview-table td.matched   { color: var(--accent); }
+    .preview-table td.unmatched { color: var(--danger); }
+    .preview-table td.warn      { color: var(--warn); }
+    .preview-summary { font-size: 0.65rem; padding: 4px 2px; }
+    .preview-summary .ok  { color: var(--accent); }
+    .preview-summary .bad { color: var(--danger); }
+    #import-footer { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+    #import-mode-wrap { font-size: 0.62rem; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-right: auto; }
+    #import-mode-wrap select { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 3px 6px; font-family: 'DM Mono', monospace; font-size: 0.62rem; outline: none; cursor: pointer; }
+
+    /* ═══════════════════════════════════
+       RESPONSIVE — TABLET
+    ═══════════════════════════════════ */
+    @media (max-width: 900px) {
+      #booking-panel { width: 340px; min-width: 240px; }
+      #grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+    }
+
+    /* ═══════════════════════════════════
+       RESPONSIVE — MOBILE (≤600px)
+    ═══════════════════════════════════ */
+    @media (max-width: 600px) {
+      html, body { overflow: hidden; }
+      #topbar { padding: 0 12px; }
+      #topbar h1 { font-size: 1.1rem; }
+      #booking-panel, #divider { display: none !important; }
+      #mobile-booking-btn { display: flex; }
+      #catalog-panel { flex: 1; border-right: none; }
+      #grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; padding: 10px; }
+      .card .card-qty-overlay { display: block; }
+      .popup { display: none !important; }
+      .pin-badge { display: none !important; }
+      #mobile-overlay { display: none; }
+      #mobile-overlay.open { display: flex; }
+      #btn-ask { display: none; }
+    }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>Image <em>Catalog</em></h1>
+  <span id="item-count"></span>
+  <div class="topbar-actions">
+    <button id="btn-ask" class="topbar-btn accent" title="Open catalog assistant">&#9998; ASK</button>
+    <button id="btn-import" class="topbar-btn" title="Import booking document">&#8679; IMPORT</button>
+    <button id="mobile-booking-btn">
+      BOOKING <span class="badge" id="mobile-badge">0</span>
+    </button>
+  </div>
+</div>
+
+<div id="app">
+
+  <!-- LEFT: image catalog -->
+  <div id="catalog-panel">
+    <div id="catalog-header">CATALOG — drag or double-click to book</div>
+    <div id="catalog-search-wrap">
+      <input id="catalog-search" type="text" placeholder="Search q_id, ref_id, model name…" autocomplete="off" />
+      <button id="catalog-search-clear" title="Clear search">✕</button>
+    </div>
+    <div id="grid"></div>
+  </div>
+
+  <!-- DIVIDER -->
+  <div id="divider"></div>
+
+  <!-- RIGHT: booking panel -->
+  <div id="booking-panel">
+    <div id="booking-header">BOOKING SHEET</div>
+    <div id="semester-wrap">
+      <label>SEMESTER BEGINS:</label>
+      <input type="date" id="semester-start" title="First day of Week 1" />
+      <span id="current-week-badge"></span>
+    </div>
+    <div class="booking-inner" id="booking-inner-desktop">
+      <!-- injected by JS -->
+    </div>
+  </div>
+
+</div>
+
+<!-- MOBILE overlay sheet -->
+<div id="mobile-overlay">
+  <div id="mobile-sheet">
+    <div id="mobile-sheet-handle"></div>
+    <div id="mobile-sheet-header">
+      <span>BOOKING SHEET</span>
+      <button id="mobile-sheet-close">✕</button>
+    </div>
+    <div class="booking-inner" id="booking-inner-mobile">
+      <!-- injected by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- QUERY MODAL -->
+<div id="query-modal">
+  <div id="query-box">
+    <div id="query-modal-header">
+      <span>CATALOG ASSISTANT</span>
+      <button id="query-modal-close">&#10005;</button>
+    </div>
+    <div id="query-messages">
+      <div class="q-msg hint">Try: "where is 1.02 in week 5" · "how many BS3 left in week 3" · "conflicts in week 6" · "what does LSN104 need on Monday"</div>
+    </div>
+    <div id="query-input-wrap">
+      <input id="query-input" type="text" placeholder="Ask about the catalog or schedule…" autocomplete="off" />
+      <button id="query-send">ASK</button>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT MODAL -->
+<div id="import-modal">
+  <div id="import-box">
+    <div id="import-header">
+      <span>IMPORT BOOKING DOCUMENT</span>
+      <div class="import-format-wrap">
+        FORMAT:
+        <select id="import-doc-type">
+          <option value="auto">Auto-detect</option>
+          <option value="ola">OLA (bullet list)</option>
+          <option value="lmm">LMM (table format)</option>
+        </select>
+      </div>
+      <button id="import-close">&#10005;</button>
+    </div>
+    <div id="import-body">
+      <div id="import-dropzone">
+        <input type="file" id="import-file-input" accept=".pdf,.docx,.doc" />
+        <div class="dz-icon">&#8679;</div>
+        <p><strong>Click to choose</strong> or drag &amp; drop a file here<br>.docx or .pdf — booking documents only</p>
+      </div>
+      <div id="import-file-name"></div>
+      <div id="import-status"></div>
+      <div id="import-preview"></div>
+    </div>
+    <div id="import-footer">
+      <div id="import-mode-wrap">
+        MODE:
+        <select id="import-mode">
+          <option value="merge">Merge with existing</option>
+          <option value="replace">Replace existing</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost" id="btn-import-cancel" style="flex:0 0 auto;padding:7px 16px;">CANCEL</button>
+      <button class="btn btn-primary" id="btn-import-submit" style="flex:0 0 auto;padding:7px 16px;" disabled>IMPORT</button>
+    </div>
+  </div>
+</div>
+
+<div id="hint">CLICK ANYWHERE TO UNPIN</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════════════════ */
+const CSV_PATH   = 'model_cat_v2.csv';
+const IMAGES_DIR = 'images/';
+const IMG_EXTS   = ['jpg','jpeg','png','webp','gif','svg'];
+const ALL_ROOMS  = ['W_101','W_301','Q_704'];
+const WEEK_ORDER = ['1','2','3','4','5','6','7','8','9','10','11','12','13','exam'];
+const ALL_UNITS  = ['LSB142','LSD142','LSN104','LQB187','LQB570','LQB571','LQB482'];
+const ALL_DAYS   = ['Mon','Tue','Wed','Thu','Fri'];
+
+/* ═══════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════ */
+let catalog    = [];
+let baseCounts = {};
+let weekCounts = {}; // [week][q_id] = {w_ded, q_ded}
+let bookings   = {}; // [week][sessionKey] = {room, unit, days[], times{}, items[]}
+let unitMeta   = {}; // per-unit memory: {room, days[], times{}}
+
+let pinnedCard   = null;
+let dragQid      = null;
+let selectedDays = [];
+let dayTimes     = {};
+
+let activeWeek = '';
+let activeRoom = '';
+let activeUnit = '';
+
+/* ═══════════════════════════════════════════════════════
+   BOOKING UI — build + wire (shared for desktop + mobile)
+═══════════════════════════════════════════════════════ */
+function buildBookingUI(container) {
+  container.innerHTML = `
+    <div class="booking-controls-wrap" style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px;flex-shrink:0;">
+      <div class="ctrl-row">
+        <label>WEEK</label>
+        <select class="sel-week">
+          <option value="">— select —</option>
+          ${WEEK_ORDER.map(w => `<option value="${w}">${w === 'exam' ? 'Exam' : 'Week ' + w}</option>`).join('')}
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <label>UNIT</label>
+        <select class="sel-unit">
+          <option value="">— select —</option>
+          ${ALL_UNITS.map(u => `<option value="${u}">${u}</option>`).join('')}
+        </select>
+      </div>
+      <div class="ctrl-row">
+        <label>ROOM</label>
+        <select class="sel-room">
+          <option value="">— select —</option>
+          ${ALL_ROOMS.map(r => `<option value="${r}">${r}</option>`).join('')}
+        </select>
+      </div>
+      <div class="ctrl-row" style="align-items:flex-start;">
+        <label style="padding-top:4px;">DAYS</label>
+        <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+          <div class="days-group">
+            ${ALL_DAYS.map(d => `<button class="day-btn" data-day="${d}">${d}</button>`).join('')}
+          </div>
+          <div class="day-time-list"></div>
+        </div>
+      </div>
+    </div>
+    <div class="drop-zone-inner" style="flex:1;min-height:0;overflow-y:auto;padding:14px 16px;position:relative;display:flex;flex-direction:column;">
+      <div class="drop-hint-inner" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;pointer-events:none;transition:opacity 0.2s;">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#c8f55a" stroke-width="1.2" style="opacity:0.2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+        <p style="font-size:0.68rem;color:var(--muted);text-align:center;line-height:1.6;">Drag an image here<br>or double-click it<br><span style="color:#444">select Week + Unit + Room first</span></p>
+      </div>
+      <div class="doc-meta-inner" style="display:none;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border);">
+        <h2 style="font-family:'Fraunces',serif;font-weight:300;font-size:1rem;color:var(--text);margin-bottom:3px;">—</h2>
+        <p style="font-size:0.63rem;color:var(--muted);"></p>
+      </div>
+      <div class="booking-list-inner" style="display:flex;flex-direction:column;gap:8px;"></div>
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;">
+      <button class="btn btn-ghost btn-clear">CLEAR</button>
+      <button class="btn btn-ghost btn-csv">CSV</button>
+      <button class="btn btn-primary btn-xls">EXPORT XLS</button>
+    </div>
+  `;
+
+  wireBookingUI(container);
+  syncUIState(container);
+}
+
+function wireBookingUI(container) {
+  const selWeekEl = container.querySelector('.sel-week');
+  const selUnitEl = container.querySelector('.sel-unit');
+  const selRoomEl = container.querySelector('.sel-room');
+  const dayBtns   = container.querySelectorAll('.day-btn');
+
+  selWeekEl.addEventListener('change', () => {
+    activeWeek = selWeekEl.value;
+    syncAllInstances('week', activeWeek);
+    renderAllBookingDocs();
+    refreshAllCards();
+  });
+
+  selUnitEl.addEventListener('change', () => {
+    activeUnit = selUnitEl.value;
+    if (activeUnit && unitMeta[activeUnit]) {
+      activeRoom   = unitMeta[activeUnit].room  || '';
+      selectedDays = [...(unitMeta[activeUnit].days  || [])];
+      dayTimes     = { ...(unitMeta[activeUnit].times || {}) };
+    } else {
+      selectedDays = [];
+      dayTimes     = {};
+    }
+    syncAllInstances('unit', activeUnit);
+    syncAllInstances('room', activeRoom);
+    syncAllInstances('days', selectedDays);
+    syncAllInstances('times', dayTimes);
+    renderAllBookingDocs();
+    refreshAllCards();
+  });
+
+  selRoomEl.addEventListener('change', () => {
+    activeRoom = selRoomEl.value;
+    if (activeUnit) {
+      if (!unitMeta[activeUnit]) unitMeta[activeUnit] = { room: '', days: [], times: {} };
+      unitMeta[activeUnit].room = activeRoom;
+    }
+    syncAllInstances('room', activeRoom);
+    renderAllBookingDocs();
+    refreshAllCards();
+  });
+
+  dayBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const day = btn.dataset.day;
+      if (selectedDays.includes(day)) {
+        selectedDays = selectedDays.filter(d => d !== day);
+        delete dayTimes[day];
+      } else {
+        selectedDays.push(day);
+      }
+      saveDaysToUnit();
+      updateSessionDaysLive();
+      syncAllInstances('days', selectedDays);
+      syncAllInstances('times', dayTimes);
+      renderDayTimeInputsInContainer(container);
+      renderAllBookingDocs();
+    });
+  });
+
+  // Drop zone
+  const dz = container.querySelector('.drop-zone-inner');
+  dz.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    dz.style.background    = 'rgba(200,245,90,0.04)';
+    dz.style.outline       = '2px dashed var(--accent-dim)';
+    dz.style.outlineOffset = '-8px';
+  });
+  dz.addEventListener('dragleave', () => { dz.style.background = ''; dz.style.outline = ''; });
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.style.background = ''; dz.style.outline = '';
+    if (dragQid) addBooking(dragQid);
+  });
+
+  container.querySelector('.btn-clear').addEventListener('click', doClear);
+  container.querySelector('.btn-csv').addEventListener('click', exportCSV);
+  container.querySelector('.btn-xls').addEventListener('click', exportXLS);
+}
+
+/* ─── Day/time helpers ─── */
+function saveDaysToUnit() {
+  if (!activeUnit) return;
+  if (!unitMeta[activeUnit]) unitMeta[activeUnit] = { room: '', days: [], times: {} };
+  unitMeta[activeUnit].days  = [...selectedDays];
+  unitMeta[activeUnit].times = { ...dayTimes };
+}
+
+function updateSessionDaysLive() {
+  if (!activeWeek || !activeRoom || !activeUnit) return;
+  const key = sessionKey(activeRoom, activeUnit);
+  if (bookings[activeWeek] && bookings[activeWeek][key]) {
+    bookings[activeWeek][key].days  = [...selectedDays];
+    bookings[activeWeek][key].times = { ...dayTimes };
+  }
+}
+
+function syncAllInstances(field, value) {
+  getAllContainers().forEach(c => {
+    if (field === 'week') { const el = c.querySelector('.sel-week'); if (el && el.value !== value) el.value = value; }
+    if (field === 'unit') { const el = c.querySelector('.sel-unit'); if (el && el.value !== value) el.value = value; }
+    if (field === 'room') { const el = c.querySelector('.sel-room'); if (el && el.value !== value) el.value = value; }
+    if (field === 'days') {
+      c.querySelectorAll('.day-btn').forEach(btn => btn.classList.toggle('active', value.includes(btn.dataset.day)));
+      renderDayTimeInputsInContainer(c);
+    }
+    if (field === 'times') {
+      c.querySelectorAll('.day-time-row').forEach(row => {
+        const day = row.dataset.day;
+        const inp = row.querySelector('.day-time-input');
+        if (inp && value[day] !== undefined && inp.value !== value[day]) inp.value = value[day];
+      });
+    }
+  });
+}
+
+function renderDayTimeInputsInContainer(c) {
+  const listEl = c.querySelector('.day-time-list');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+  ALL_DAYS.filter(d => selectedDays.includes(d)).forEach(day => {
+    const row = document.createElement('div');
+    row.className = 'day-time-row'; row.dataset.day = day;
+    const tag   = document.createElement('span'); tag.className = 'day-time-tag'; tag.textContent = day;
+    const input = document.createElement('input');
+    input.type = 'text'; input.className = 'day-time-input';
+    input.placeholder = 'e.g. 9am-11am'; input.value = dayTimes[day] || '';
+    input.addEventListener('input', () => {
+      dayTimes[day] = input.value.trim();
+      saveDaysToUnit(); updateSessionDaysLive();
+      syncAllInstances('times', dayTimes);
+    });
+    row.appendChild(tag); row.appendChild(input);
+    listEl.appendChild(row);
+  });
+}
+
+function syncUIState(container) {
+  const sw = container.querySelector('.sel-week'); if (sw) sw.value = activeWeek;
+  const su = container.querySelector('.sel-unit'); if (su) su.value = activeUnit;
+  const sr = container.querySelector('.sel-room'); if (sr) sr.value = activeRoom;
+  container.querySelectorAll('.day-btn').forEach(btn => btn.classList.toggle('active', selectedDays.includes(btn.dataset.day)));
+  renderDayTimeInputsInContainer(container);
+}
+
+function getAllContainers() {
+  return ['booking-inner-desktop','booking-inner-mobile'].map(id => document.getElementById(id)).filter(Boolean);
+}
+
+/* ═══════════════════════════════════════════════════════
+   CSV PARSER
+═══════════════════════════════════════════════════════ */
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = splitCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+  return lines.slice(1).map(line => {
+    const vals = splitCSVLine(line), obj = {};
+    headers.forEach((h, i) => obj[h] = (vals[i] || '').trim());
+    return obj;
+  });
+}
+function splitCSVLine(line) {
+  const r = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { if (inQ && line[i+1]==='"') { cur+='"'; i++; } else inQ=!inQ; }
+    else if (c===',' && !inQ) { r.push(cur); cur=''; }
+    else cur += c;
+  }
+  r.push(cur); return r;
+}
+
+/* ═══════════════════════════════════════════════════════
+   IMAGE FINDER
+═══════════════════════════════════════════════════════ */
+function findImage(id) {
+  return new Promise(resolve => {
+    let idx = 0;
+    function tryNext() {
+      if (idx >= IMG_EXTS.length) { resolve(null); return; }
+      const src = `${IMAGES_DIR}${id}.${IMG_EXTS[idx++]}`;
+      const img = new Image();
+      img.onload = () => resolve(src); img.onerror = tryNext; img.src = src;
+    }
+    tryNext();
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   COUNTS
+═══════════════════════════════════════════════════════ */
+function initCounts() {
+  baseCounts = {};
+  catalog.forEach(item => {
+    baseCounts[item.q_id] = {
+      w_count:     parseInt(item.w_count)     || 0,
+      q_count:     parseInt(item.q_count)     || 0,
+      total_count: parseInt(item.total_count) || 0,
+    };
+  });
+}
+
+function effectiveCounts(q_id, week) {
+  const base = baseCounts[q_id]; if (!base) return null;
+  const wd = (weekCounts[week] && weekCounts[week][q_id]) || { w_ded: 0, q_ded: 0 };
+  return {
+    w_count:     base.w_count     - wd.w_ded,
+    q_count:     base.q_count     - wd.q_ded,
+    total_count: base.total_count - wd.w_ded - wd.q_ded,
+  };
+}
+
+function deduct(q_id, week, isW) {
+  if (!weekCounts[week])       weekCounts[week] = {};
+  if (!weekCounts[week][q_id]) weekCounts[week][q_id] = { w_ded: 0, q_ded: 0 };
+  if (isW) weekCounts[week][q_id].w_ded++; else weekCounts[week][q_id].q_ded++;
+}
+
+function revertN(q_id, week, isW, n) {
+  if (!weekCounts[week] || !weekCounts[week][q_id]) return;
+  if (isW) weekCounts[week][q_id].w_ded = Math.max(0, weekCounts[week][q_id].w_ded - n);
+  else     weekCounts[week][q_id].q_ded = Math.max(0, weekCounts[week][q_id].q_ded - n);
+}
+
+function sessionKey(room, unit) { return `${room}||${unit}`; }
+function parseKey(key)          { const [room, unit] = key.split('||'); return { room, unit }; }
+
+/* ═══════════════════════════════════════════════════════
+   CONFLICT DETECTION
+═══════════════════════════════════════════════════════ */
+function parseTimeRange(str) {
+  if (!str) return null;
+  const m = str.trim().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*[-–]\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  if (!m) return null;
+  const toMins = (h, mins, period) => {
+    let hh = parseInt(h); const mm = parseInt(mins || 0);
+    if (period) {
+      if (period.toLowerCase() === 'pm' && hh !== 12) hh += 12;
+      if (period.toLowerCase() === 'am' && hh === 12) hh = 0;
+    }
+    return hh * 60 + mm;
+  };
+  const startPeriod = m[3] || m[6] || '';
+  const endPeriod   = m[6] || '';
+  const start = toMins(m[1], m[2], startPeriod);
+  const end   = toMins(m[4], m[5], endPeriod);
+  if (isNaN(start) || isNaN(end) || start >= end) return null;
+  return { start, end };
+}
+
+function timesOverlap(rangeA, rangeB) {
+  if (!rangeA || !rangeB) return true;
+  return rangeA.start < rangeB.end && rangeB.start < rangeA.end;
+}
+
+function formatDayTime(session) {
+  const days = ALL_DAYS.filter(d => (session.days || []).includes(d));
+  if (!days.length) return '(no days)';
+  return days.map(d => { const t = (session.times || {})[d]; return t ? `${d} ${t}` : d; }).join(', ');
+}
+
+function detectConflict(q_id, week) {
+  const eff = effectiveCounts(q_id, week);
+  if (!eff || eff.total_count > 0) return null;
+  const weekData = bookings[week] || {};
+  const involved = [];
+  Object.entries(weekData).forEach(([key, session]) => {
+    if (session.items.some(e => e.q_id === q_id)) {
+      const { room, unit } = parseKey(key);
+      involved.push({ room, unit, days: session.days || [], times: session.times || {} });
+    }
+  });
+  if (involved.length < 2) return null;
+  for (let i = 0; i < involved.length; i++) {
+    for (let j = i + 1; j < involved.length; j++) {
+      const sharedDays = involved[i].days.filter(d => involved[j].days.includes(d));
+      for (const day of sharedDays) {
+        const rangeA = parseTimeRange(involved[i].times[day]);
+        const rangeB = parseTimeRange(involved[j].times[day]);
+        if (timesOverlap(rangeA, rangeB)) {
+          const a = `${involved[i].room}_${involved[i].unit}(${formatDayTime(involved[i])})`;
+          const b = `${involved[j].room}_${involved[j].unit}(${formatDayTime(involved[j])})`;
+          return `conflict between ${a} and ${b}`;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/* ═══════════════════════════════════════════════════════
+   CARD BUILDING
+═══════════════════════════════════════════════════════ */
+function buildCard(item, imgSrc) {
+  const card = document.createElement('div');
+  card.className = 'card'; card.dataset.qid = item.q_id;
+
+  const img = document.createElement('img');
+  img.alt = item.model_name || item.q_id || '';
+  img.src = imgSrc || `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Crect fill='%23222' width='300' height='300'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%23555' font-size='12' font-family='monospace'%3Eno image%3C/text%3E%3C/svg%3E`;
+
+  const availBadge = document.createElement('div'); availBadge.className = 'avail-badge';
+  const qtyOverlay = document.createElement('div'); qtyOverlay.className = 'card-qty-overlay';
+  const cardLabel  = document.createElement('div'); cardLabel.className = 'card-label'; cardLabel.textContent = item.q_id || '—';
+  const pinBadge   = document.createElement('div'); pinBadge.className = 'pin-badge'; pinBadge.textContent = 'PINNED';
+
+  const popup  = document.createElement('div'); popup.className = 'popup';
+  const nameEl = document.createElement('div'); nameEl.className = 'popup-name'; nameEl.textContent = item.model_name || item.q_id || '—';
+  popup.appendChild(nameEl);
+  [
+    { label:'Q_ID', key:'q_id' }, { label:'REF ID', key:'ref_id' },
+    { label:'MFR', key:'manufacturer' }, { label:'LOCATION', key:'location' },
+    { label:'W COUNT', key:'w_count', isCount:true }, { label:'Q COUNT', key:'q_count', isCount:true }, { label:'TOTAL', key:'total_count', isCount:true },
+  ].forEach(({ label, key, isCount }) => {
+    if (item[key] === undefined || item[key] === '') return;
+    const row = document.createElement('div'); row.className = 'popup-row';
+    const lb = document.createElement('span'); lb.className = 'lbl'; lb.textContent = label;
+    const vl = document.createElement('span'); vl.className = 'val'; if (isCount) vl.dataset.countKey = key; vl.textContent = item[key];
+    row.appendChild(lb); row.appendChild(vl); popup.appendChild(row);
+  });
+
+  card.appendChild(img); card.appendChild(availBadge); card.appendChild(qtyOverlay);
+  card.appendChild(cardLabel); card.appendChild(pinBadge); card.appendChild(popup);
+
+  updateCardUI(card, item.q_id);
+
+  card.setAttribute('draggable', true);
+  card.addEventListener('dragstart', e => {
+    if (card.classList.contains('exhausted')) { e.preventDefault(); return; }
+    dragQid = item.q_id; card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'copy';
+  });
+  card.addEventListener('dragend', () => { dragQid = null; card.classList.remove('dragging'); });
+
+  card.addEventListener('dblclick', e => {
+    e.stopPropagation();
+    if (!card.classList.contains('exhausted')) addBooking(item.q_id);
+  });
+
+  card.addEventListener('click', e => {
+    e.stopPropagation();
+    if (card.classList.contains('exhausted')) return;
+    if (isMobile()) {
+      addBooking(item.q_id);
+    } else {
+      if (pinnedCard && pinnedCard !== card) pinnedCard.classList.remove('pinned');
+      card.classList.toggle('pinned');
+      pinnedCard = card.classList.contains('pinned') ? card : null;
+      document.getElementById('hint').classList.toggle('visible', !!pinnedCard);
+    }
+  });
+
+  return card;
+}
+
+function isMobile() { return window.innerWidth <= 600; }
+
+function updateCardUI(card, q_id) {
+  const ab  = card.querySelector('.avail-badge');
+  const qto = card.querySelector('.card-qty-overlay');
+
+  if (activeWeek && activeRoom && activeUnit) {
+    const key  = sessionKey(activeRoom, activeUnit);
+    const sess = bookings[activeWeek] && bookings[activeWeek][key];
+    const entry = sess && sess.items.find(e => e.q_id === q_id);
+    qto.textContent = entry ? entry.qty : '';
+  } else {
+    qto.textContent = '';
+  }
+
+  if (!activeWeek || !activeRoom) {
+    ab.className = 'avail-badge'; ab.textContent = '';
+    card.classList.remove('exhausted');
+    const item = catalog.find(r => r.q_id === q_id);
+    if (item) card.querySelectorAll('[data-count-key]').forEach(el => { el.textContent = item[el.dataset.countKey]||'0'; el.classList.remove('depleted'); });
+    return;
+  }
+
+  const isW = activeRoom.startsWith('W');
+  const eff  = effectiveCounts(q_id, activeWeek);
+  if (!eff) return;
+
+  card.querySelectorAll('[data-count-key]').forEach(el => {
+    const val = eff[el.dataset.countKey]; el.textContent = val; el.classList.toggle('depleted', val <= 0);
+  });
+
+  const relevant = isW ? eff.w_count : eff.q_count;
+
+  if (isW && relevant <= 0 && eff.q_count > 0) {
+    card.classList.remove('exhausted'); ab.className = 'avail-badge qavail'; ab.textContent = `Q:${eff.q_count}`;
+  } else if (eff.total_count <= 0 || relevant <= 0) {
+    card.classList.add('exhausted'); ab.className = 'avail-badge none'; ab.textContent = 'NONE';
+  } else {
+    card.classList.remove('exhausted');
+    ab.className = relevant <= 2 ? 'avail-badge low' : 'avail-badge ok';
+    ab.textContent = `x${relevant}`;
+  }
+}
+
+function refreshAllCards() {
+  document.querySelectorAll('.card').forEach(c => updateCardUI(c, c.dataset.qid));
+  updateMobileBadge();
+}
+
+function updateMobileBadge() {
+  let total = 0;
+  if (activeWeek && activeRoom && activeUnit) {
+    const key  = sessionKey(activeRoom, activeUnit);
+    const sess = bookings[activeWeek] && bookings[activeWeek][key];
+    if (sess) total = sess.items.reduce((s, e) => s + e.qty, 0);
+  }
+  document.getElementById('mobile-badge').textContent = total;
+}
+
+/* ═══════════════════════════════════════════════════════
+   BOOKING LOGIC
+═══════════════════════════════════════════════════════ */
+function addBooking(q_id) {
+  if (!activeWeek || !activeRoom || !activeUnit) { flashControls(); return; }
+  const item = catalog.find(r => r.q_id === q_id); if (!item) return;
+  const isW  = activeRoom.startsWith('W');
+  const eff  = effectiveCounts(q_id, activeWeek);
+  if (eff && eff.total_count <= 0) return;
+  if (eff && isW  && eff.w_count <= 0 && eff.q_count <= 0) return;
+  if (eff && !isW && eff.q_count <= 0) return;
+
+  const isQOverflow = isW && eff && eff.w_count <= 0 && eff.q_count > 0;
+
+  if (!bookings[activeWeek]) bookings[activeWeek] = {};
+  const key = sessionKey(activeRoom, activeUnit);
+  if (!bookings[activeWeek][key]) {
+    bookings[activeWeek][key] = { room: activeRoom, unit: activeUnit, days: [...selectedDays], times: {...dayTimes}, items: [] };
+  }
+
+  const list     = bookings[activeWeek][key].items;
+  const existing = list.find(e => e.q_id === q_id);
+  if (existing) {
+    existing.qty++;
+    if (isQOverflow) existing.q_overflow = (existing.q_overflow || 0) + 1;
+  } else {
+    list.push({ q_id, model_name: item.model_name || '', qty: 1, q_overflow: isQOverflow ? 1 : 0, comment: '' });
+  }
+
+  deduct(q_id, activeWeek, isW && !isQOverflow);
+  renderAllBookingDocs();
+  refreshAllCards();
+}
+
+function removeEntry(q_id, week, key) {
+  if (!bookings[week] || !bookings[week][key]) return;
+  const list  = bookings[week][key].items;
+  const idx   = list.findIndex(e => e.q_id === q_id); if (idx === -1) return;
+  const entry = list[idx];
+  const { room } = parseKey(key);
+  const isW   = room.startsWith('W');
+  const qOver = entry.q_overflow || 0;
+  const wNorm = entry.qty - qOver;
+  if (wNorm > 0) revertN(q_id, week, isW,    wNorm);
+  if (qOver > 0) revertN(q_id, week, false,   qOver);
+  list.splice(idx, 1);
+  renderAllBookingDocs();
+  refreshAllCards();
+}
+
+function flashControls() {
+  getAllContainers().forEach(c => {
+    ['.sel-week','.sel-unit','.sel-room'].forEach(sel => {
+      const el = c.querySelector(sel); if (!el) return;
+      el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 700);
+    });
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER BOOKING DOC
+═══════════════════════════════════════════════════════ */
+function renderAllBookingDocs() {
+  getAllContainers().forEach(c => renderBookingDocIn(c));
+}
+
+function renderBookingDocIn(container) {
+  const hint    = container.querySelector('.drop-hint-inner');
+  const metaEl  = container.querySelector('.doc-meta-inner');
+  const titleEl = metaEl && metaEl.querySelector('h2');
+  const subEl   = metaEl && metaEl.querySelector('p');
+  const listEl  = container.querySelector('.booking-list-inner');
+  if (!listEl) return;
+  listEl.innerHTML = '';
+
+  if (!activeWeek || !activeRoom || !activeUnit) {
+    if (metaEl) metaEl.style.display = 'none';
+    if (hint) hint.style.opacity = '1';
+    return;
+  }
+
+  const key     = sessionKey(activeRoom, activeUnit);
+  const session = bookings[activeWeek] && bookings[activeWeek][key];
+  const list    = session ? session.items : [];
+
+  if (list.length === 0) {
+    if (metaEl) metaEl.style.display = 'none';
+    if (hint) hint.style.opacity = '1';
+  } else {
+    if (metaEl) metaEl.style.display = 'block';
+    if (hint) hint.style.opacity = '0';
+    const wLabel   = activeWeek === 'exam' ? 'Exam' : `Week ${activeWeek}`;
+    const dayLabel = selectedDays.length
+      ? ' · ' + ALL_DAYS.filter(d => selectedDays.includes(d))
+          .map(d => dayTimes[d] ? `${d} ${dayTimes[d]}` : d).join(', ')
+      : '';
+    if (titleEl) titleEl.innerHTML = `<em>${wLabel}</em> — ${activeRoom}_${activeUnit}${dayLabel}`;
+    if (subEl)   subEl.textContent = `${list.length} item type${list.length !== 1 ? 's' : ''} booked`;
+  }
+
+  list.forEach(entry => {
+    const conflict = detectConflict(entry.q_id, activeWeek);
+    const div = document.createElement('div'); div.className = 'booking-entry';
+
+    const numEl = document.createElement('div'); numEl.className = 'entry-num'; numEl.textContent = entry.qty;
+    const body  = document.createElement('div'); body.className = 'entry-body';
+    const qidEl   = document.createElement('div'); qidEl.className = 'entry-qid';   qidEl.textContent = entry.q_id;
+    const modelEl = document.createElement('div'); modelEl.className = 'entry-model'; modelEl.textContent = entry.model_name;
+
+    const qMsg = document.createElement('div'); qMsg.className = 'entry-msg qblock';
+    if (entry.q_overflow > 0) { qMsg.textContent = `collect ${entry.q_overflow} from Q block`; qMsg.style.display = 'block'; }
+    const cMsg = document.createElement('div'); cMsg.className = 'entry-msg conflict';
+    if (conflict) { cMsg.textContent = conflict; cMsg.style.display = 'block'; }
+
+    body.appendChild(qidEl); body.appendChild(modelEl); body.appendChild(qMsg); body.appendChild(cMsg);
+
+    const removeBtn = document.createElement('button'); removeBtn.className = 'entry-remove'; removeBtn.title = 'Remove'; removeBtn.textContent = '✕';
+    removeBtn.addEventListener('click', () => removeEntry(entry.q_id, activeWeek, key));
+
+    div.appendChild(numEl); div.appendChild(body); div.appendChild(removeBtn);
+    listEl.appendChild(div);
+  });
+
+  // Session-level comment textarea
+  const existingWrap = listEl.parentElement.querySelector('.session-comment-wrap');
+  if (existingWrap) existingWrap.remove();
+
+  if (list.length > 0 && session) {
+    const wrap = document.createElement('div'); wrap.className = 'session-comment-wrap';
+    const lbl  = document.createElement('div'); lbl.className = 'session-comment-label';
+    lbl.textContent = `NOTES — ${activeRoom}_${activeUnit}`;
+    const ta = document.createElement('textarea'); ta.className = 'session-comment';
+    ta.placeholder = `add notes for ${activeRoom}_${activeUnit} Week ${activeWeek}…`;
+    ta.value = session.comment || '';
+    ta.addEventListener('input', () => { session.comment = ta.value; });
+    wrap.appendChild(lbl); wrap.appendChild(ta);
+    listEl.parentElement.appendChild(wrap);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   CLEAR / EXPORT
+═══════════════════════════════════════════════════════ */
+function doClear() {
+  if (!activeWeek || !activeRoom || !activeUnit) return;
+  const key     = sessionKey(activeRoom, activeUnit);
+  const session = bookings[activeWeek] && bookings[activeWeek][key];
+  if (!session) return;
+  const isW = activeRoom.startsWith('W');
+  session.items.forEach(entry => {
+    const qOver = entry.q_overflow || 0;
+    const wNorm = entry.qty - qOver;
+    if (wNorm > 0) revertN(entry.q_id, activeWeek, isW,   wNorm);
+    if (qOver > 0) revertN(entry.q_id, activeWeek, false,  qOver);
+  });
+  delete bookings[activeWeek][key];
+  renderAllBookingDocs(); refreshAllCards();
+}
+
+function exportCSV() {
+  const totalDed = {};
+  Object.values(weekCounts).forEach(wk => Object.entries(wk).forEach(([q_id, ded]) => {
+    if (!totalDed[q_id]) totalDed[q_id] = { w:0, q:0 };
+    totalDed[q_id].w += ded.w_ded; totalDed[q_id].q += ded.q_ded;
+  }));
+  const headers = ['Q_id','ref_id','model_name','manufacturer','location','W_count','Q_count','Total_count'];
+  const rows = catalog.map(item => {
+    const base = baseCounts[item.q_id] || {}, ded = totalDed[item.q_id] || { w:0, q:0 };
+    return [item.q_id, item.ref_id, item.model_name, item.manufacturer, item.location,
+      (base.w_count||0)-ded.w, (base.q_count||0)-ded.q, (base.total_count||0)-ded.w-ded.q,
+    ].map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',');
+  });
+  const blob = new Blob([[headers.join(','), ...rows].join('\n')], { type:'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'catalog_updated.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportXLS() {
+  if (typeof XLSX === 'undefined') { alert('SheetJS not loaded yet.'); return; }
+  const wb = XLSX.utils.book_new();
+
+  WEEK_ORDER.forEach(week => {
+    const weekData = bookings[week];
+    if (!weekData || Object.keys(weekData).length === 0) return;
+    const sessions = Object.values(weekData).filter(s => s.items.length > 0);
+    if (sessions.length === 0) return;
+
+    const itemMap = {};
+    sessions.forEach(s => s.items.forEach(e => {
+      if (!itemMap[e.q_id]) {
+        const cat = catalog.find(r => r.q_id === e.q_id) || {};
+        itemMap[e.q_id] = { q_id: e.q_id, ref_id: cat.ref_id||'', model_name: e.model_name, manufacturer: cat.manufacturer||'', location: cat.location||'' };
+      }
+    }));
+    const items = Object.values(itemMap);
+
+    const fixedCols = ['Q_id / Ref_ID', 'Model_Name', 'Manufacturer', 'Location'];
+    const extraCols = ['Q_block_collect', 'Conflict', 'W_remaining', 'Q_remaining', 'Total_remaining'];
+    const aoa = [];
+
+    aoa.push([...fixedCols, ...sessions.map(s => `${s.room}_${s.unit}`), ...extraCols]);
+
+    const dayTimeRow = fixedCols.map(() => '');
+    sessions.forEach(s => {
+      const days = ALL_DAYS.filter(d => (s.days || []).includes(d));
+      const label = days.map(d => { const t = (s.times || {})[d]; return t ? `${d} ${t}` : d; }).join(' / ');
+      dayTimeRow.push(label || '');
+    });
+    extraCols.forEach(() => dayTimeRow.push(''));
+    aoa.push(dayTimeRow);
+
+    items.forEach(item => {
+      const row = [`${item.q_id} / ${item.ref_id}`, item.model_name, item.manufacturer, item.location];
+      let totalQO = 0, conflictMsg = '';
+      sessions.forEach(s => {
+        const e = s.items.find(e => e.q_id === item.q_id);
+        row.push(e ? e.qty : '');
+        if (e) totalQO += e.q_overflow || 0;
+      });
+      const conf = detectConflict(item.q_id, week);
+      if (conf) conflictMsg = conf;
+      row.push(totalQO > 0 ? `collect ${totalQO} from Q block` : '');
+      row.push(conflictMsg);
+      const eff = effectiveCounts(item.q_id, week);
+      row.push(eff ? eff.w_count     : '');
+      row.push(eff ? eff.q_count     : '');
+      row.push(eff ? eff.total_count : '');
+      aoa.push(row);
+    });
+
+    const hasAnyComment = sessions.some(s => s.comment && s.comment.trim());
+    if (hasAnyComment) {
+      const notesRow = ['', 'NOTES', '', ''];
+      sessions.forEach(s => notesRow.push(s.comment || ''));
+      extraCols.forEach(() => notesRow.push(''));
+      aoa.push(notesRow);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [
+      {wch:18}, {wch:28}, {wch:18}, {wch:14},
+      ...sessions.map(() => ({wch:16})),
+      {wch:22}, {wch:36}, {wch:12}, {wch:12}, {wch:14}
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, week === 'exam' ? 'Exam' : `Week ${week}`);
+  });
+
+  if (wb.SheetNames.length === 0) { alert('No bookings to export yet.'); return; }
+  XLSX.writeFile(wb, 'bookings_export.xlsx');
+}
+
+/* ═══════════════════════════════════════════════════════
+   SEARCH BAR
+═══════════════════════════════════════════════════════ */
+(function() {
+  const searchEl = document.getElementById('catalog-search');
+  const clearBtn = document.getElementById('catalog-search-clear');
+  if (!searchEl) return;
+
+  function applySearch(q) {
+    const term = q.trim().toLowerCase();
+    clearBtn.classList.toggle('visible', term.length > 0);
+    document.querySelectorAll('.card').forEach(card => {
+      if (!term) { card.classList.remove('hidden-by-search'); return; }
+      const qid   = (card.dataset.qid || '').toLowerCase();
+      const item  = catalog.find(r => r.q_id === card.dataset.qid) || {};
+      const refid = (item.ref_id     || '').toLowerCase();
+      const name  = (item.model_name || '').toLowerCase();
+      card.classList.toggle('hidden-by-search', !qid.includes(term) && !refid.includes(term) && !name.includes(term));
+    });
+  }
+
+  searchEl.addEventListener('input',   () => applySearch(searchEl.value));
+  clearBtn.addEventListener('click',   () => { searchEl.value = ''; applySearch(''); searchEl.focus(); });
+  searchEl.addEventListener('keydown', e => { if (e.key === 'Escape') { searchEl.value = ''; applySearch(''); } });
+})();
+
+/* ═══════════════════════════════════════════════════════
+   SEMESTER DATE HELPERS
+═══════════════════════════════════════════════════════ */
+function getSemesterStart() {
+  const el = document.getElementById('semester-start');
+  if (!el || !el.value) return null;
+  const d = new Date(el.value + 'T00:00:00');
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function weekToDateRange(weekNum) {
+  const s = getSemesterStart();
+  if (!s || isNaN(parseInt(weekNum))) return null;
+  const n     = parseInt(weekNum);
+  const start = new Date(s); start.setDate(start.getDate() + (n - 1) * 7);
+  const end   = new Date(start); end.setDate(end.getDate() + 4);
+  const fmt   = d => d.toLocaleDateString('en-AU', { day:'numeric', month:'short' });
+  return `${fmt(start)}–${fmt(end)}`;
+}
+
+function todayToWeek() {
+  const s = getSemesterStart(); if (!s) return null;
+  const now = new Date(); now.setHours(0,0,0,0);
+  const diff = Math.floor((now - s) / (7 * 24 * 3600 * 1000));
+  if (diff < 0 || diff > 12) return null;
+  return String(diff + 1);
+}
+
+function updateWeekBadge() {
+  const badge = document.getElementById('current-week-badge'); if (!badge) return;
+  const w = todayToWeek();
+  if (w) {
+    const range = weekToDateRange(w);
+    badge.textContent = `Week ${w} now${range ? ' · ' + range : ''}`;
+    badge.classList.add('visible');
+  } else {
+    badge.classList.remove('visible');
+  }
+}
+
+document.getElementById('semester-start').addEventListener('change', updateWeekBadge);
+
+/* ═══════════════════════════════════════════════════════
+   RESIZABLE DIVIDER
+═══════════════════════════════════════════════════════ */
+function initResizer() {
+  const divider    = document.getElementById('divider');
+  const leftPanel  = document.getElementById('catalog-panel');
+  const rightPanel = document.getElementById('booking-panel');
+  const app        = document.getElementById('app');
+  let dragging = false, startX = 0, startLeft = 0;
+
+  divider.addEventListener('mousedown', e => {
+    dragging = true; startX = e.clientX; startLeft = leftPanel.getBoundingClientRect().width;
+    divider.classList.add('dragging');
+    document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const appW    = app.getBoundingClientRect().width;
+    const delta   = e.clientX - startX;
+    const newLeft = Math.max(200, Math.min(startLeft + delta, appW - 280 - 6));
+    leftPanel.style.flex  = 'none';
+    leftPanel.style.width = `${newLeft}px`;
+    rightPanel.style.width = `${appW - newLeft - 6}px`;
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false; divider.classList.remove('dragging');
+    document.body.style.cursor = ''; document.body.style.userSelect = '';
+  });
+  divider.addEventListener('touchstart', e => {
+    dragging = true; startX = e.touches[0].clientX; startLeft = leftPanel.getBoundingClientRect().width;
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    const appW    = app.getBoundingClientRect().width;
+    const delta   = e.touches[0].clientX - startX;
+    const newLeft = Math.max(200, Math.min(startLeft + delta, appW - 280 - 6));
+    leftPanel.style.flex  = 'none';
+    leftPanel.style.width = `${newLeft}px`;
+    rightPanel.style.width = `${appW - newLeft - 6}px`;
+  }, { passive: true });
+  document.addEventListener('touchend', () => { dragging = false; });
+}
+
+/* ═══════════════════════════════════════════════════════
+   MOBILE OVERLAY
+═══════════════════════════════════════════════════════ */
+document.getElementById('mobile-booking-btn').addEventListener('click', () => {
+  document.getElementById('mobile-overlay').classList.add('open');
+  renderAllBookingDocs();
+});
+document.getElementById('mobile-sheet-close').addEventListener('click', () => {
+  document.getElementById('mobile-overlay').classList.remove('open');
+});
+document.getElementById('mobile-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('mobile-overlay'))
+    document.getElementById('mobile-overlay').classList.remove('open');
+});
+
+/* ═══════════════════════════════════════════════════════
+   CLICK OUTSIDE = UNPIN
+═══════════════════════════════════════════════════════ */
+document.addEventListener('click', () => {
+  if (pinnedCard) {
+    pinnedCard.classList.remove('pinned'); pinnedCard = null;
+    document.getElementById('hint').classList.remove('visible');
+  }
+});
+
+/* ═══════════════════════════════════════════════════════
+   QUERY MODAL
+═══════════════════════════════════════════════════════ */
+document.getElementById('btn-ask').addEventListener('click', () => {
+  document.getElementById('query-modal').classList.add('open');
+  setTimeout(() => document.getElementById('query-input').focus(), 80);
+});
+document.getElementById('query-modal-close').addEventListener('click', () => {
+  document.getElementById('query-modal').classList.remove('open');
+});
+document.getElementById('query-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('query-modal'))
+    document.getElementById('query-modal').classList.remove('open');
+});
+
+/* ── Query engine ── */
+function addQueryMsg(text, type) {
+  const div = document.createElement('div');
+  div.className = `q-msg ${type}`; div.innerHTML = text;
+  const msgs = document.getElementById('query-messages');
+  msgs.appendChild(div); msgs.scrollTop = msgs.scrollHeight;
+}
+
+function submitQuery() {
+  const input = document.getElementById('query-input');
+  const raw   = input.value.trim(); if (!raw) return;
+  addQueryMsg(raw, 'user');
+  input.value = '';
+  addQueryMsg(runQuery(raw), 'system');
+}
+
+document.getElementById('query-send').addEventListener('click', submitQuery);
+document.getElementById('query-input').addEventListener('keydown', e => { if (e.key === 'Enter') submitQuery(); });
+
+function normalise(str) {
+  return str.toLowerCase().replace(/[''']/g, "'").replace(/\s+/g, ' ').trim();
+}
+
+function findItemByIdent(ident) {
+  const q = ident.trim().toLowerCase();
+  let found = catalog.find(r => r.q_id && r.q_id.toLowerCase() === q); if (found) return found;
+  found = catalog.find(r => r.ref_id && r.ref_id.toLowerCase() === q); if (found) return found;
+  const qn = q.replace(/[\/.\-]/g, '');
+  found = catalog.find(r => r.ref_id && r.ref_id.toLowerCase().replace(/[\/.\-]/g, '') === qn); if (found) return found;
+  found = catalog.find(r => r.q_id   && r.q_id.toLowerCase().replace(/[\/.\-]/g, '') === qn);   if (found) return found;
+  found = catalog.find(r => r.model_name && r.model_name.toLowerCase().includes(q)); if (found) return found;
+  return null;
+}
+
+function resolveWeek(text) {
+  if (/\b(today|this week|now|current week)\b/.test(text)) {
+    const w = todayToWeek();
+    if (!w) return { week: null, error: 'Please set the <em>Semester Begins</em> date to use "today" queries.' };
+    return { week: w };
+  }
+  if (/\bexam\b/.test(text)) return { week: 'exam' };
+  const m = text.match(/\b(?:week|wk)\s*(\d{1,2})\b/) || text.match(/\bweek\s*(\d{1,2})\b/);
+  if (m) return { week: m[1] };
+  const n = text.match(/\bin\s+(\d{1,2})\b/);
+  if (n) return { week: n[1] };
+  return { week: null };
+}
+
+function weekLabel(week) {
+  if (week === 'exam') return 'Exam week';
+  const range = weekToDateRange(week);
+  return range ? `Week ${week} (${range})` : `Week ${week}`;
+}
+
+function sessionDayTime(session) {
+  const days = ALL_DAYS.filter(d => (session.days || []).includes(d));
+  if (!days.length) return '';
+  return days.map(d => { const t = (session.times || {})[d]; return t ? `${d} ${t}` : d; }).join(', ');
+}
+
+function runQuery(raw) {
+  const q = normalise(raw);
+
+  const whereMatch =
+    q.match(/where\s+(?:is|are)\s+(?:model\s+)?(.+?)\s+(?:in\s+)?(?:week\s*\d{1,2}|exam|today|this week|now|in\s+\d{1,2})/) ||
+    q.match(/where\s+(?:is|are)\s+(?:model\s+)?(.+)/);
+  if (whereMatch || /\bwhere\b/.test(q)) return handleLocationQuery(q);
+
+  if (/\bhow many\b|\bleft\b|\bavailable\b|\bremaining\b|\bstock\b/.test(q)) return handleAvailabilityQuery(q);
+
+  if (/\bconflict/.test(q)) return handleConflictQuery(q);
+
+  if (/\bwhat\s+does\b|\bschedule\b|\bneed[s]?\b|\brequire[s]?\b/.test(q)) return handleScheduleQuery(q);
+
+  if (/\btoday\b|\bthis week\b|\bnow\b|\bcurrent week\b/.test(q)) {
+    const w = todayToWeek();
+    if (!w) return 'Please set the <em>Semester Begins</em> date first to use time-based queries.';
+    return `Today is in <em>${weekLabel(w)}</em>. Try: "where is [model] today" or "conflicts today".`;
+  }
+
+  return `I didn't understand that query. Try:<br>
+• "where is 1.02 in week 5"<br>
+• "how many BS3 left in week 3"<br>
+• "conflicts in week 6"<br>
+• "what does LSN104 need on Monday"<br>
+• "where is BS3 today"`;
+}
+
+function handleLocationQuery(q) {
+  const identMatch =
+    q.match(/where\s+(?:is|are)\s+(?:model\s+)?(.+?)\s+(?:in\s+week\s*\d{1,2}|in\s+exam|today|this week|now|in\s+\d{1,2})\b/) ||
+    q.match(/where\s+(?:is|are)\s+(?:model\s+)?(.+)/);
+  if (!identMatch) return 'Please specify a model — e.g. "where is 1.02 in week 5".';
+
+  const ident = identMatch[1].trim();
+  const item  = findItemByIdent(ident);
+  if (!item) return `I couldn't find a model matching <em>${ident}</em> in the catalog.`;
+
+  const { week, error } = resolveWeek(q);
+  if (error) return error;
+  if (!week) return `Please specify a week — e.g. "where is ${ident} in week 5".`;
+
+  const weekData = bookings[week] || {};
+  const sessions = Object.values(weekData).filter(s => s.items.some(e => e.q_id === item.q_id));
+  const eff  = effectiveCounts(item.q_id, week);
+  const wLbl = weekLabel(week);
+
+  if (!sessions.length) {
+    const remaining = eff ? eff.total_count : '?';
+    return `<em>${item.model_name}</em> (${item.q_id}) is not booked out in ${wLbl}. ` +
+      `${remaining} remain${remaining === 1 ? 's' : ''} in storage — location: ${item.location || 'unspecified'}.`;
+  }
+
+  const parts = sessions.map(s => {
+    const entry = s.items.find(e => e.q_id === item.q_id);
+    const dt    = sessionDayTime(s);
+    return `<em>${entry.qty}</em> ${entry.qty === 1 ? 'is' : 'are'} in <em>${s.room}</em> for <em>${s.unit}</em>${dt ? ' (' + dt + ')' : ''}`;
+  });
+
+  let response = `In ${wLbl}, ${item.model_name} (${item.q_id}): `;
+  response += parts.join(', ') + '. ';
+  if (eff) {
+    response += `${eff.total_count} remain${eff.total_count === 1 ? 's' : ''} in total`;
+    if (eff.w_count > 0) response += ` — <em>${eff.w_count}</em> in W block storage (location: ${item.location || 'unspecified'})`;
+    if (eff.q_count > 0) response += ` and <em>${eff.q_count}</em> in Q block`;
+    response += '.';
+  }
+  return response;
+}
+
+function handleAvailabilityQuery(q) {
+  const identMatch =
+    q.match(/how many\s+(?:of\s+)?(?:model\s+)?(.+?)\s+(?:left|available|remaining|in week|today|this week)/) ||
+    q.match(/how many\s+(?:of\s+)?(?:model\s+)?(.+)/);
+  if (!identMatch) return 'Please specify a model — e.g. "how many 1.02 left in week 5".';
+
+  const ident = identMatch[1].replace(/\b(left|available|remaining|in|week|\d+)\b.*/i, '').trim();
+  const item  = findItemByIdent(ident);
+  if (!item) return `I couldn't find a model matching <em>${ident}</em> in the catalog.`;
+
+  const { week, error } = resolveWeek(q);
+  if (error) return error;
+  if (!week) {
+    const base = baseCounts[item.q_id] || {};
+    return `Base stock for <em>${item.model_name}</em> (${item.q_id}): ` +
+      `${base.w_count || 0} in W block, ${base.q_count || 0} in Q block, ${base.total_count || 0} total.`;
+  }
+
+  const eff  = effectiveCounts(item.q_id, week);
+  const wLbl = weekLabel(week);
+  if (!eff) return `No count data for <em>${item.model_name}</em>.`;
+
+  let response = `In ${wLbl}, <em>${item.model_name}</em> (${item.q_id}) has `;
+  response += `<em>${eff.total_count}</em> remaining in total`;
+  if (eff.w_count > 0) response += ` — ${eff.w_count} in W block (location: ${item.location || 'unspecified'})`;
+  if (eff.q_count > 0) response += ` and ${eff.q_count} in Q block`;
+  response += '.';
+  if (eff.total_count <= 0) response += ' <span class="danger">⚠ All units are booked out this week.</span>';
+  else if (eff.total_count <= 2) response += ' <span class="warn">⚠ Low stock.</span>';
+  return response;
+}
+
+function handleConflictQuery(q) {
+  const { week, error } = resolveWeek(q);
+  if (error) return error;
+  if (!week) return 'Please specify a week — e.g. "conflicts in week 6".';
+
+  const weekData = bookings[week] || {};
+  const allItems = new Set();
+  Object.values(weekData).forEach(s => s.items.forEach(e => allItems.add(e.q_id)));
+
+  const conflicts = [];
+  allItems.forEach(q_id => {
+    const msg = detectConflict(q_id, week);
+    if (msg) {
+      const item = catalog.find(r => r.q_id === q_id);
+      conflicts.push(`<em>${item ? item.model_name : q_id}</em> (${q_id}): ${msg}`);
+    }
+  });
+
+  const wLbl = weekLabel(week);
+  if (!conflicts.length) {
+    if (!Object.keys(weekData).length) return `No bookings recorded for ${wLbl} yet.`;
+    return `No conflicts detected for ${wLbl}. All models are within available stock.`;
+  }
+  return `<span class="danger">⚠ ${conflicts.length} conflict${conflicts.length > 1 ? 's' : ''} in ${wLbl}:</span><br>` +
+    conflicts.join('<br>');
+}
+
+function handleScheduleQuery(q) {
+  const unitMatch = q.match(/\b([A-Z]{2,4}\d{3,4})\b/i);
+  const dayMatch  = q.match(/\b(mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?)\b/i);
+  const DAY_MAP   = { mon:'Mon',monday:'Mon',tue:'Tue',tuesday:'Tue',wed:'Wed',wednesday:'Wed',thu:'Thu',thursday:'Thu',fri:'Fri',friday:'Fri' };
+  const day       = dayMatch ? DAY_MAP[dayMatch[1].toLowerCase()] : null;
+  const { week, error } = resolveWeek(q);
+  if (error) return error;
+
+  const results = [];
+  const weeksToSearch = week ? [week] : WEEK_ORDER.filter(w => bookings[w]);
+
+  weeksToSearch.forEach(wk => {
+    const weekData = bookings[wk] || {};
+    Object.entries(weekData).forEach(([key, session]) => {
+      const { unit } = parseKey(key);
+      const unitOk = !unitMatch || unit.toLowerCase() === unitMatch[1].toLowerCase();
+      const dayOk  = !day || (session.days || []).includes(day);
+      if (unitOk && dayOk && session.items.length > 0) results.push({ wk, session, unit });
+    });
+  });
+
+  if (!results.length) {
+    const who   = unitMatch ? unitMatch[1].toUpperCase() : 'that unit';
+    const when  = week ? weekLabel(week) : 'any week';
+    const onDay = day ? ` on ${day}` : '';
+    return `No schedule found for <em>${who}</em>${onDay} in ${when}.`;
+  }
+
+  const lines = results.map(({ wk, session, unit }) => {
+    const dt    = sessionDayTime(session);
+    const items = session.items.map(e => `${e.qty}× ${e.model_name || e.q_id}`).join(', ');
+    return `<em>${unit}</em> in ${weekLabel(wk)}${dt ? ' (' + dt + ')' : ''}: ${items}`;
+  });
+
+  const header = unitMatch
+    ? `Schedule for <em>${unitMatch[1].toUpperCase()}</em>${day ? ' on ' + day : ''}:`
+    : `Schedule${day ? ' for ' + day : ''}:`;
+
+  return header + '<br>' + lines.join('<br>');
+}
+
+/* ═══════════════════════════════════════════════════════
+   DOCUMENT IMPORT
+═══════════════════════════════════════════════════════ */
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+let importParsedData = null;
+
+document.getElementById('btn-import').addEventListener('click', () => {
+  resetImportModal();
+  document.getElementById('import-modal').classList.add('open');
+});
+document.getElementById('import-close').addEventListener('click', closeImportModal);
+document.getElementById('btn-import-cancel').addEventListener('click', closeImportModal);
+document.getElementById('import-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('import-modal')) closeImportModal();
+});
+
+function closeImportModal() {
+  document.getElementById('import-modal').classList.remove('open');
+  resetImportModal();
+}
+function resetImportModal() {
+  importParsedData = null;
+  document.getElementById('import-file-name').textContent    = '';
+  document.getElementById('import-status').textContent       = '';
+  document.getElementById('import-status').className         = '';
+  document.getElementById('import-preview').innerHTML        = '';
+  document.getElementById('import-preview').classList.remove('visible');
+  document.getElementById('btn-import-submit').disabled      = true;
+  document.getElementById('import-file-input').value         = '';
+}
+
+const importDZ    = document.getElementById('import-dropzone');
+const importInput = document.getElementById('import-file-input');
+importDZ.addEventListener('dragover',  e => { e.preventDefault(); importDZ.classList.add('dragover'); });
+importDZ.addEventListener('dragleave', () => importDZ.classList.remove('dragover'));
+importDZ.addEventListener('drop', e => {
+  e.preventDefault(); importDZ.classList.remove('dragover');
+  const f = e.dataTransfer.files[0]; if (f) handleImportFile(f);
+});
+importInput.addEventListener('change', () => { const f = importInput.files[0]; if (f) handleImportFile(f); });
+
+async function handleImportFile(file) {
+  const nameEl   = document.getElementById('import-file-name');
+  const statusEl = document.getElementById('import-status');
+  nameEl.textContent = file.name;
+  statusEl.className = ''; statusEl.textContent = 'Reading file…';
+  document.getElementById('import-preview').classList.remove('visible');
+  document.getElementById('btn-import-submit').disabled = true;
+
+  try {
+    let text = '', docTitle = '';
+    const ext = file.name.split('.').pop().toLowerCase();
+
+    if (ext === 'docx' || ext === 'doc') {
+      if (typeof mammoth === 'undefined') throw new Error('mammoth.js not loaded');
+      const buf    = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer: buf });
+      text = result.value;
+      const fnMatch = file.name.match(/([A-Z]{2,4}\d{3,4})/i);
+      if (fnMatch) docTitle = fnMatch[1].toUpperCase();
+    } else if (ext === 'pdf') {
+      if (typeof pdfjsLib === 'undefined') throw new Error('PDF.js not loaded');
+      const buf  = await file.arrayBuffer();
+      const pdf  = await pdfjsLib.getDocument({ data: buf }).promise;
+      const parts = [];
+      try { const meta = await pdf.getMetadata(); if (meta && meta.info && meta.info.Title) docTitle = meta.info.Title; } catch(e) {}
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const cnt  = await page.getTextContent();
+        parts.push(cnt.items.map(i => i.str).join(' '));
+      }
+      text = parts.join('\n');
+      const titleLine = text.match(/Title[:\s]+([A-Z]{2,4}\d{3,4})/i);
+      if (titleLine && !docTitle) docTitle = titleLine[1].toUpperCase();
+    } else {
+      throw new Error('Unsupported file type. Please upload a .docx or .pdf file.');
+    }
+
+    statusEl.textContent = 'Parsing document…';
+    const parsed = parseBookingDocument(text, docTitle);
+
+    if (!parsed.sessions.length) {
+      statusEl.className = 'error'; statusEl.textContent = 'No bookable items found. Check the document format.'; return;
+    }
+
+    importParsedData = parsed;
+    renderImportPreview(parsed);
+    const matched   = parsed.sessions.reduce((s, sess) => s + sess.items.filter(i =>  i.catalogItem).length, 0);
+    const unmatched = parsed.sessions.reduce((s, sess) => s + sess.items.filter(i => !i.catalogItem).length, 0);
+    statusEl.className = unmatched > 0 ? '' : 'ok';
+    statusEl.textContent = matched + ' item(s) matched' + (unmatched > 0 ? ', ' + unmatched + ' unmatched (shown in red)' : ' — all matched!');
+    document.getElementById('btn-import-submit').disabled = matched === 0;
+  } catch (err) {
+    statusEl.className = 'error'; statusEl.textContent = 'Error: ' + err.message;
+  }
+}
+
+/* ── Document parsers ── */
+function parseBookingDocument(text, docTitle) {
+  const docTypeEl = document.getElementById('import-doc-type');
+  const docType   = docTypeEl ? docTypeEl.value : 'auto';
+  let format = docType;
+  if (format === 'auto') {
+    format = (/Model\s+Number/i.test(text) || /TOPIC\s*\(WEEK\s*\d/i.test(text)) ? 'lmm' : 'ola';
+  }
+  return format === 'lmm' ? parseLMM(text, docTitle) : parseOLA(text);
+}
+
+function parseOLA(text) {
+  const lines = text.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+  const full  = lines.join('\n');
+
+  let unit = '';
+  for (const p of [/Unit\s+(?:Name\/Code|Code|Name)\s*[:\-–—]\s*([A-Z]{2,4}\d{3,4})/i, /\b(LS[A-Z]\d{3,4}|LQ[A-Z]\d{3,4})\b/]) {
+    const m = full.match(p); if (m) { unit = m[1].toUpperCase().trim(); break; }
+  }
+
+  const weekSections = [];
+  let currentWeek = null, currentLines = [];
+  for (const line of lines) {
+    const weekMatch = line.match(/^(?:week\s+)?(\d{1,2})\s*(?:\(column\s*\d+\))?$/i) || line.match(/^(?:row\s+\d+:\s*)?(?:week\s+)?(\d{1,2})\s*$/i);
+    if (weekMatch) {
+      const wNum = parseInt(weekMatch[1]);
+      if (wNum >= 1 && wNum <= 13) {
+        if (currentWeek !== null && currentLines.length) weekSections.push({ week: String(currentWeek), lines: currentLines });
+        currentWeek = wNum; currentLines = []; continue;
+      }
+    }
+    if (currentWeek !== null) currentLines.push(line);
+  }
+  if (currentWeek !== null && currentLines.length) weekSections.push({ week: String(currentWeek), lines: currentLines });
+
+  const sessions = [];
+  weekSections.forEach(({ week, lines: wLines }) => {
+    const sectionText = wLines.join(' ');
+    if (/no\s+practical|no\s+materials?\s+required/i.test(sectionText)) return;
+    const items = [];
+    const itemPattern = /(\d+)?\s*[x×]?\s*([^\n\(]{2,60}?)\s*\(([A-Z]{1,4}\d+(?:[\/.\-]\d+)?)\)/gi;
+    let match;
+    while ((match = itemPattern.exec(sectionText)) !== null) {
+      const rawQty  = match[1] ? parseInt(match[1]) : 1;
+      const rawName = match[2].replace(/^[·•\-\*\s]+/, '').trim();
+      const rawCode = match[3].trim();
+      if (!rawName && !rawCode) continue;
+      items.push({ rawName, rawCode, qty: rawQty, catalogItem: findCatalogItem(rawCode, rawName) });
+    }
+    const deduped = dedupItems(items);
+    if (deduped.length > 0) sessions.push({ week, unit, items: deduped });
+  });
+  return { unit, sessions };
+}
+
+function parseLMM(text, docTitle) {
+  let unit = '';
+  if (docTitle) { const m = docTitle.match(/\b([A-Z]{2,4}\d{3,4})\b/i); if (m) unit = m[1].toUpperCase(); }
+  if (!unit)    { const m = text.match(/\b([A-Z]{2,4}\d{3,4})\b/);      if (m) unit = m[1].toUpperCase(); }
+
+  const sessions = []; let currentWeek = null, currentItems = [], sectionMode = null;
+
+  for (const line of text.split(/\n/)) {
+    const trimmed = line.trim(); if (!trimmed) continue;
+
+    const weekMatch = trimmed.match(/^TOPIC\s*\(WEEK\s*(\d{1,2})\)/i);
+    if (weekMatch) {
+      if (currentWeek !== null && currentItems.length > 0)
+        sessions.push({ week: String(currentWeek), unit, items: dedupItems(currentItems) });
+      currentWeek = parseInt(weekMatch[1]); currentItems = []; sectionMode = null; continue;
+    }
+    if (/^END\s+WEEK/i.test(trimmed)) {
+      if (currentWeek !== null && currentItems.length > 0)
+        sessions.push({ week: String(currentWeek), unit, items: dedupItems(currentItems) });
+      currentWeek = null; currentItems = []; sectionMode = null; continue;
+    }
+    if (currentWeek === null) continue;
+    if (/^MODELS$/i.test(trimmed))                              { sectionMode = 'models'; continue; }
+    if (/^IMAGES\/POSTERS$/i.test(trimmed) || /^IMAGES$/i.test(trimmed)) { sectionMode = 'images'; continue; }
+    if (/^CONSUMABLES$/i.test(trimmed) || /^ADDITIONAL/i.test(trimmed))  { sectionMode = null;     continue; }
+    if (/^Note[s]?[:\s]/i.test(trimmed))             continue;
+    if (/^Model\s+Number/i.test(trimmed))            continue;
+    if (/^Name\s+(Quantity|Station)/i.test(trimmed)) continue;
+    if (/^Type\/Description/i.test(trimmed))         continue;
+    if (sectionMode === null) continue;
+
+    if (trimmed.includes('\t')) {
+      const cols = trimmed.split('\t').map(c => c.trim());
+      let rawCode = '', rawName = '', rawQty = 1;
+      if (sectionMode === 'models' && cols.length >= 2) {
+        rawCode = cols[0].replace(/\*+/g, '').trim();
+        rawName = cols[1].replace(/\*+/g, '').trim();
+        rawQty  = parseInt(cols[2]) || 1;
+      } else if (sectionMode === 'images' && cols.length >= 2) {
+        rawName = cols[0].replace(/\*+/g, '').trim(); rawQty = parseInt(cols[1]) || 1;
+        const inlineCode = rawName.match(/\(([A-Za-z]\w+)\)\s*$/);
+        if (inlineCode) { rawCode = inlineCode[1]; rawName = rawName.replace(/\s*\([A-Za-z]\w+\)\s*$/, '').trim(); }
+      }
+      if (!rawName && !rawCode) continue;
+      if (!rawCode && sectionMode === 'models') continue;
+      currentItems.push({ rawName, rawCode, qty: rawQty, catalogItem: findCatalogItem(rawCode, rawName) });
+    }
+  }
+  if (currentWeek !== null && currentItems.length > 0)
+    sessions.push({ week: String(currentWeek), unit, items: dedupItems(currentItems) });
+  return { unit, sessions };
+}
+
+function dedupItems(items) {
+  const deduped = [];
+  items.forEach(item => {
+    const key = item.catalogItem ? item.catalogItem.q_id : (item.rawCode + '|' + item.rawName);
+    const ex  = deduped.find(d => (d.catalogItem ? d.catalogItem.q_id : (d.rawCode+'|'+d.rawName)) === key);
+    if (ex) ex.qty += item.qty; else deduped.push({ ...item });
+  });
+  return deduped;
+}
+
+function findCatalogItem(code, name) {
+  let found;
+  found = catalog.find(r => r.q_id  && r.q_id.toString().toLowerCase()  === code.toLowerCase());   if (found) return found;
+  found = catalog.find(r => r.ref_id && r.ref_id.toString().toLowerCase() === code.toLowerCase());  if (found) return found;
+  const codeBase = code.replace(/[\/\.\-]/g, '').toLowerCase();
+  found = catalog.find(r => r.ref_id && r.ref_id.toString().replace(/[\/\.\-]/g,'').toLowerCase() === codeBase); if (found) return found;
+  found = catalog.find(r => r.q_id   && r.q_id.toString().replace(/[\/\.\-]/g,'').toLowerCase()   === codeBase); if (found) return found;
+  if (name && name.length > 3) {
+    const nl = name.toLowerCase();
+    found = catalog.find(r => r.model_name && r.model_name.toLowerCase().includes(nl));                           if (found) return found;
+    found = catalog.find(r => r.model_name && nl.includes(r.model_name.toLowerCase()) && r.model_name.length > 3); if (found) return found;
+  }
+  return null;
+}
+
+function renderImportPreview(parsed) {
+  const container = document.getElementById('import-preview');
+  container.innerHTML = '';
+  parsed.sessions.forEach(session => {
+    const block  = document.createElement('div'); block.className = 'preview-unit-block';
+    const header = document.createElement('div'); header.className = 'preview-unit-header';
+    header.innerHTML =
+      (session.unit ? `<span>UNIT <em>${session.unit}</em></span>` : '<span>UNIT <em>unknown</em></span>') +
+      `<span>WEEK <em>${session.week}</em></span><span>${session.items.length} item(s)</span>`;
+    block.appendChild(header);
+    const table = document.createElement('table'); table.className = 'preview-table';
+    table.innerHTML = `<thead><tr><th>CODE (doc)</th><th>NAME (doc)</th><th>QTY</th><th>MATCHED TO</th></tr></thead>`;
+    const tbody = document.createElement('tbody');
+    session.items.forEach(item => {
+      const tr = document.createElement('tr');
+      const matchText  = item.catalogItem ? `${item.catalogItem.q_id} — ${item.catalogItem.model_name}` : '— no match';
+      const matchClass = item.catalogItem ? 'matched' : 'unmatched';
+      tr.innerHTML = `<td>${item.rawCode}</td><td>${item.rawName || '—'}</td><td>${item.qty}</td><td class="${matchClass}">${matchText}</td>`;
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody); block.appendChild(table); container.appendChild(block);
+  });
+  container.classList.add('visible');
+}
+
+document.getElementById('btn-import-submit').addEventListener('click', () => {
+  if (!importParsedData) return;
+  const mode          = document.getElementById('import-mode').value;
+  const importedUnit  = importParsedData.unit || activeUnit || '';
+  const effectiveRoom = activeRoom || '';
+  const importedKeys  = {};
+
+  importParsedData.sessions.forEach(session => {
+    const week = session.week, unit = importedUnit;
+    if (!week) return;
+    if (!bookings[week]) bookings[week] = {};
+
+    if (mode === 'replace' && effectiveRoom) {
+      const existingKey = sessionKey(effectiveRoom, unit);
+      if (bookings[week][existingKey]) {
+        const sess = bookings[week][existingKey];
+        const isW  = effectiveRoom.startsWith('W');
+        sess.items.forEach(e => {
+          const qOver = e.q_overflow || 0;
+          const wNorm = e.qty - qOver;
+          if (wNorm > 0) revertN(e.q_id, week, isW,    wNorm);
+          if (qOver  > 0) revertN(e.q_id, week, false,  qOver);
+        });
+        delete bookings[week][existingKey];
+      }
+    }
+
+    const placeholderRoom = effectiveRoom || ('_IMP_' + unit);
+    const key = sessionKey(placeholderRoom, unit);
+    importedKeys[week] = key;
+
+    if (!bookings[week][key]) {
+      bookings[week][key] = { room: placeholderRoom, unit, days: [...selectedDays], times: {...dayTimes}, items: [] };
+    }
+
+    session.items.forEach(item => {
+      if (!item.catalogItem) return;
+      const q_id = item.catalogItem.q_id;
+      const isW  = placeholderRoom.startsWith('W');
+      for (let i = 0; i < item.qty; i++) {
+        const effNow = effectiveCounts(q_id, week);
+        if (!effNow || effNow.total_count <= 0) break;
+        const isQOverflow = isW && effNow.w_count <= 0 && effNow.q_count > 0;
+        const list     = bookings[week][key].items;
+        const existing = list.find(e => e.q_id === q_id);
+        if (existing) { existing.qty++; if (isQOverflow) existing.q_overflow = (existing.q_overflow || 0) + 1; }
+        else list.push({ q_id, model_name: item.catalogItem.model_name || '', qty: 1, q_overflow: isQOverflow ? 1 : 0, comment: '' });
+        deduct(q_id, week, isW && !isQOverflow);
+      }
+    });
+  });
+
+  if (effectiveRoom) {
+    const placeholderRoom = '_IMP_' + importedUnit;
+    Object.entries(importedKeys).forEach(([week, oldKey]) => {
+      if (!bookings[week]) return;
+      if (!oldKey.startsWith(placeholderRoom + '||') && !oldKey.includes('_IMP_')) return;
+      if (!bookings[week][oldKey]) return;
+      const newKey = sessionKey(effectiveRoom, importedUnit);
+      if (newKey === oldKey) return;
+      if (!bookings[week][newKey]) {
+        bookings[week][newKey] = { ...bookings[week][oldKey], room: effectiveRoom };
+      } else {
+        bookings[week][oldKey].items.forEach(srcItem => {
+          const dest = bookings[week][newKey].items.find(d => d.q_id === srcItem.q_id);
+          if (dest) { dest.qty += srcItem.qty; dest.q_overflow = (dest.q_overflow || 0) + (srcItem.q_overflow || 0); }
+          else bookings[week][newKey].items.push({ ...srcItem });
+        });
+      }
+      delete bookings[week][oldKey];
+    });
+  }
+
+  const hadUnit = !!activeUnit, hadWeek = !!activeWeek;
+  if (importedUnit && !activeUnit)                              { activeUnit = importedUnit; syncAllInstances('unit', activeUnit); }
+  if (importParsedData.sessions.length > 0 && !activeWeek)    { activeWeek = importParsedData.sessions[0].week; syncAllInstances('week', activeWeek); }
+
+  closeImportModal();
+  renderAllBookingDocs();
+  refreshAllCards();
+
+  if (!effectiveRoom) {
+    setTimeout(() => {
+      getAllContainers().forEach(c => {
+        const sr = c.querySelector('.sel-room');
+        if (sr) { sr.classList.add('flash'); setTimeout(() => sr.classList.remove('flash'), 1200); }
+      });
+    }, 300);
+  }
+  if (hadUnit || hadWeek) showImportToast(importedUnit, importParsedData.sessions.length);
+});
+
+function showImportToast(unit, weekCount) {
+  const existing = document.getElementById('import-toast'); if (existing) existing.remove();
+  const toast = document.createElement('div'); toast.id = 'import-toast';
+  toast.style.cssText = [
+    'position:fixed','bottom:28px','left:50%','transform:translateX(-50%)',
+    'background:var(--surface)','border:1px solid var(--accent-dim)',
+    'color:var(--text)','font-family:monospace','font-size:0.68rem',
+    'padding:10px 20px','border-radius:4px','z-index:700',
+    'box-shadow:0 8px 24px rgba(0,0,0,0.6)','letter-spacing:0.04em',
+    'display:flex','align-items:center','gap:10px'
+  ].join(';');
+  toast.innerHTML = `<span style="color:var(--accent)">✓</span> Imported <strong>${unit || 'document'}</strong> (${weekCount} week${weekCount !== 1 ? 's' : ''}). Switch Unit to view.`;
+  document.body.appendChild(toast);
+  setTimeout(() => { toast.style.transition = 'opacity 0.4s'; toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 4000);
+}
+
+/* ═══════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════ */
+async function init() {
+  buildBookingUI(document.getElementById('booking-inner-desktop'));
+  buildBookingUI(document.getElementById('booking-inner-mobile'));
+  initResizer();
+
+  let text;
+  try {
+    const resp = await fetch(CSV_PATH);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    text = await resp.text();
+  } catch (err) {
+    document.getElementById('grid').innerHTML =
+      `<p style="color:var(--muted);font-size:0.8rem;padding:20px">Could not load ${CSV_PATH}: ${err.message}</p>`;
+    return;
+  }
+
+  catalog = parseCSV(text);
+  initCounts();
+  document.getElementById('item-count').textContent = `${catalog.length} item${catalog.length !== 1 ? 's' : ''}`;
+
+  const resolved = await Promise.all(catalog.map(item => findImage(item.q_id)));
+  catalog.forEach((item, i) => document.getElementById('grid').appendChild(buildCard(item, resolved[i])));
+
+  updateWeekBadge();
+}
+
+init();
+</script>
+</body>
+</html>
